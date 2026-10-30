@@ -54,12 +54,13 @@ async function client({headStatus = 200, savedPlayer = null, listenFailures = 0,
     TextEncoder, URLSearchParams, performance:{now:() => now},
     setInterval:() => 1,setTimeout:() => 1,clearTimeout(){},console,
     fetch:async (url,options = {}) => {
+      if (url.startsWith('/locales/')) return {ok:true,json:async () => JSON.parse(fs.readFileSync('web' + url,'utf8'))};
       const action = url.replace('/api/',''); const body = options.body ? JSON.parse(options.body) : undefined;
       calls.push({action,body});
       if (operationTransport && (action.startsWith('operations?') || ['undo','operation-recover','metadata'].includes(action))) return {ok:true,json:async () => operationTransport(action,body)};
       if (healthTransport && action.startsWith('health')) return {ok:true,json:async () => healthTransport(action,body)};
       if (controlTransport && (action.startsWith('control') || action === 'status')) return {ok:true,json:async () => controlTransport(action,body)};
-      if (url.startsWith('/media/')) return {ok:headStatus === 200, status:headStatus, json:async () => ({error:'Файл не найден'})};
+      if (url.startsWith('/media/')) return {ok:headStatus === 200, status:headStatus, json:async () => ({error:'File not found'})};
       if (action.startsWith('media-info/')) return {ok:true,json:async () => ({path:'Jazz/test.flac',mime:'audio/flac',container:'FLAC',size:200})};
       let result = {ok:true};
       if (action === 'listen' && listenFailures-- > 0) throw new Error('offline');
@@ -74,7 +75,9 @@ async function client({headStatus = 200, savedPlayer = null, listenFailures = 0,
     }
   };
   const context = vm.createContext(sandbox);
-  for (const [,src] of fs.readFileSync('web/index.html','utf8').matchAll(/<script src="\/([^"]+)"/g)) vm.runInContext(fs.readFileSync('web/' + src,'utf8'),context);
+  vm.runInContext(fs.readFileSync('web/i18n.js','utf8'),context);
+  await sandbox.MusicI18n.initialize();
+  for (const [,src] of fs.readFileSync('web/index.html','utf8').matchAll(/data-app-src="\/([^"]+)"/g)) vm.runInContext(fs.readFileSync('web/' + src,'utf8'),context);
   await new Promise(resolve => setImmediate(resolve));
   const run = expression => vm.runInContext(expression,context);
   return {get,audio,run,calls,local,advanceTime:ms => { now += ms; },data:() => data};
@@ -85,7 +88,7 @@ test('initial library includes nested folders and selects the first playlist des
   assert.equal(c.get('folderFilter').value,'*');
   assert.equal(c.get('addPlaylist').value,'p');
   assert.equal(c.run('visible.length'),3);
-  assert.equal(c.get('nowTitle').textContent,'Выберите музыку');
+  assert.equal(c.get('nowTitle').textContent,'Choose music');
 });
 
 test('search, exact folder filters and numeric/title sorting',async () => {
@@ -130,7 +133,7 @@ test('select all includes filtered records beyond the render limit',async () => 
   c.run('limit = 1; renderTracks()');
   c.get('selectAll').onchange({target:{checked:true}});
   assert.equal(c.run('selected.size'),3);
-  assert.equal(c.get('selectionCount').textContent,'Выбрано: 3');
+  assert.equal(c.get('selectionCount').textContent,'Selected: 3');
 });
 
 
@@ -179,7 +182,7 @@ test('decoder error includes actual path and MIME for troubleshooting', async ()
   const c = await client();
   await c.run("playTrack('a',['a'])");
   await c.run("diagnosePlayback('a',3)");
-  assert.match(c.get('playbackError').textContent,/декодирования/);
+  assert.match(c.get('playbackError').textContent,/decoding/);
   assert.match(c.get('playbackError').textContent,/audio\/flac/);
 });
 const { test: extraTest } = require('node:test');
@@ -312,7 +315,7 @@ test('history resume restores position and device filter is sent to server',asyn
   c.get('historyDevice').value='phone';
   await c.run('loadHistory(true)');
   assert.match(c.calls.at(-1).action,/device=phone/);
-  assert.match(c.get('historyEntries').innerHTML,/Продолжить с 0:45/);
+  assert.match(c.get('historyEntries').innerHTML,/Resume from 0:45/);
   await c.get('historyEntries').onclick({target:{closest:() => ({dataset:{historyResume:'event'}})}});
   c.audio.emit('loadedmetadata');
   assert.equal(c.audio.currentTime,45);
@@ -368,7 +371,7 @@ test('album detail plays in disc/track order and appends without replacing exist
   c.data().tracks.forEach((t,i) => Object.assign(t,{album:'Release',album_artist:'Various',year:'2001',disc_number:i===0 ? 2 : 1,track_number:i===1 ? 2 : 1}));
   await c.run('refresh()');
   c.run("openCollectionPage('album',catalog.albumList()[0].key)");
-  assert.match(c.get('collectionContent').innerHTML,/Диск 2/);
+  assert.match(c.get('collectionContent').innerHTML,/Disc 2/);
   const button={dataset:{collectionPlayAll:''}};
   await c.get('collectionView').onclick({target:{closest:() => button}});
   assert.equal(c.run('queue.join()'),'c,b,a');
@@ -388,7 +391,7 @@ test('overview shelves play their own list instead of the whole collection',asyn
   const button={dataset:{cplay:'b'},closest:() => ({dataset:{shelf:'recent'}})};
   await c.get('collectionView').onclick({target:{closest:() => button}});
   assert.equal(c.run('queue.join()'),'b');
-  assert.match(c.run('queueName'),/Недавно/);
+  assert.match(c.run('queueName'),/Recently/);
 });
 
 test('album can open in scoped table; clearing scope and folder navigation restore file management',async () => {
@@ -439,7 +442,7 @@ test('unknown artist pages and untrusted metadata render safely',async () => {
   c.data().tracks[0].artist=''; c.data().tracks[0].album='<img src=x onerror=alert(1)>';
   await c.run('refresh()');
   c.run("openCollectionPage('artist','')");
-  assert.match(c.get('collectionContent').innerHTML,/Неизвестный исполнитель/);
+  assert.match(c.get('collectionContent').innerHTML,/Unknown artist/);
   assert.match(c.get('collectionContent').innerHTML,/&lt;img/);
   assert.doesNotMatch(c.get('collectionContent').innerHTML,/<img src=x/);
 });
@@ -535,10 +538,10 @@ test('remote controls address only the selected browser and require its acknowle
   await controller.run("playTrack('a',['a','b'])"); await target.run("playTrack('b',['b','c'])");
   const targetId=target.run('clientId');
   await controller.run(`sendDeviceCommand('pause',null,${JSON.stringify(targetId)})`);
-  assert.equal(target.audio.paused,false); assert.match(controller.get('deviceCommandStatus').textContent,/Ожидание/);
+  assert.equal(target.audio.paused,false); assert.match(controller.get('deviceCommandStatus').textContent,/Waiting/);
   await controller.run('pollPlayerCommands()'); assert.equal(controller.audio.paused,false);
   await target.run('pollPlayerCommands()'); assert.equal(target.audio.paused,true); assert.equal(controller.audio.paused,false);
-  await controller.run('refreshCommandResult()'); assert.match(controller.get('deviceCommandStatus').textContent,/подтвердило/);
+  await controller.run('refreshCommandResult()'); assert.match(controller.get('deviceCommandStatus').textContent,/confirmed/);
 });
 
 test('redelivered next command after lost ack executes once',async () => {
@@ -574,7 +577,7 @@ test('failed transfer restores destination queue and leaves source playing',asyn
   const before=target.run('JSON.stringify(queueModel.snapshot())');
   const {snapshot}=await source.run("executePlayerCommand({action:'export'})");
   target.audio.play=async()=>{const e=Error('blocked');e.name='NotAllowedError';throw e;};
-  await assert.rejects(target.run(`executePlayerCommand({action:'import',value:${JSON.stringify(snapshot)}})`),/Браузер не разрешил/);
+  await assert.rejects(target.run(`executePlayerCommand({action:'import',value:${JSON.stringify(snapshot)}})`),/The browser blocked/);
   assert.equal(target.run('JSON.stringify(queueModel.snapshot())'),before);
   assert.equal(target.audio.src,'/media/b'); assert.equal(source.audio.paused,false);
 });
@@ -583,10 +586,10 @@ test('source changed during transfer refuses delayed pause; invalid snapshots pr
   const c=await client(); await c.run("playTrack('a',['a','b'])");
   const {snapshot}=await c.run("executePlayerCommand({action:'export'})");
   await c.run('step(1)');
-  await assert.rejects(c.run(`executePlayerCommand({action:'pause',value:{guard:${JSON.stringify(snapshot.guard)}}})`),/трек изменился/);
+  await assert.rejects(c.run(`executePlayerCommand({action:'pause',value:{guard:${JSON.stringify(snapshot.guard)}}})`),/track changed/);
   assert.equal(c.audio.paused,false); assert.equal(c.audio.src,'/media/b');
   snapshot.queueModel.entries[0].trackId='missing';
-  await assert.rejects(c.run(`executePlayerCommand({action:'import',value:${JSON.stringify(snapshot)}})`),/Не все треки/);
+  await assert.rejects(c.run(`executePlayerCommand({action:'import',value:${JSON.stringify(snapshot)}})`),/Some queue tracks/);
   assert.equal(c.audio.src,'/media/b');
 });
 
@@ -650,7 +653,7 @@ test('health rendering escapes file metadata and distinguishes quick mode from e
   c.get('healthCategory').value='problems';await c.run('loadHealth(0)');
   assert.match(c.get('healthResults').innerHTML,/&lt;img/);assert.doesNotMatch(c.get('healthResults').innerHTML,/<script>/);
   c.get('healthCategory').value='exact';await c.run('loadHealth(0)');
-  assert.match(c.get('healthEmpty').textContent,/Найти дубликаты/);
+  assert.match(c.get('healthEmpty').textContent,/Find duplicates/);
 });
 
 test('health pages and cancellation use the current report identifier',async () => {
@@ -713,12 +716,12 @@ test('journal navigation renders untrusted values safely and does not scan files
 
 test('undo conflicts keep quick action available and show the server reason',async () => {
   const c=await client({operationTransport:(action)=>{
-    if(action==='undo')throw Error('Плейлист изменился позже');
+    if(action==='undo')throw Error('The playlist was changed later');
     return operationPage();
   }});
   c.run("rememberOperation('old-operation')");await c.get('undoLast').onclick();
   assert.equal(c.get('undoNotice').hidden,false);assert.equal(c.get('undoLast').disabled,false);
-  assert.equal(c.get('toast').textContent,'Плейлист изменился позже');
+  assert.equal(c.get('toast').textContent,'The playlist was changed later');
 });
 
 test('journal recovery targets a specific operation and refreshes catalog without scanning',async () => {
@@ -729,4 +732,40 @@ test('journal recovery targets a specific operation and refreshes catalog withou
   }});
   await c.run("recoverOperation('interrupted-operation')");
   assert.equal(recovered,'interrupted-operation');assert.equal(c.calls.some(call=>call.action==='scan'),false);
+});
+
+test('switching language preserves playback, queue, position, selection, and form edits', async () => {
+  const c = await client();
+  await c.run("playTrack('a',['a','b','c'])");
+  c.audio.currentTime = 42;
+  c.get('serverTitle').value = 'Unsaved server title';
+  c.get('deviceName').value = 'Unsaved device name';
+  c.run("selected.add('b')");
+  const snapshot = c.run('JSON.stringify(queueModel.snapshot())');
+  const generation = c.run('playbackGeneration');
+  await c.run("MusicI18n.setLanguage('ru')");
+  const ru = JSON.parse(fs.readFileSync('web/locales/ru.json', 'utf8'));
+  assert.equal(c.get('pageTitle').textContent, ru['Your library']);
+  assert.equal(c.get('waveToggle').textContent, ru['Enable wave']);
+  assert.equal(c.get('nowTitle').textContent, 'Alpha');
+  assert.equal(c.get('serverTitle').value, 'Unsaved server title');
+  assert.equal(c.get('deviceName').value, 'Unsaved device name');
+  assert.equal(c.audio.paused, false);
+  assert.equal(c.audio.currentTime, 42);
+  assert.equal(c.run('playbackGeneration'), generation);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'), snapshot);
+  assert.equal(c.run("selected.has('b')"), true);
+  assert.equal(JSON.parse(c.local.get('language')), 'ru');
+  await c.run("MusicI18n.setLanguage('en')");
+  assert.equal(c.get('pageTitle').textContent, 'Your library');
+  assert.equal(c.audio.currentTime, 42);
+  const restored = await client({initialStorage:{language:c.local.get('language')}});
+  assert.equal(restored.run('MusicI18n.language'), 'en');
+});
+
+test('saved Russian language is available before the first application render', async () => {
+  const c = await client({initialStorage:{language:JSON.stringify('ru')}});
+  const ru = JSON.parse(fs.readFileSync('web/locales/ru.json', 'utf8'));
+  assert.equal(c.get('pageTitle').textContent, ru['Your library']);
+  assert.equal(c.get('nowArtist').textContent, ru['Your collection is waiting']);
 });

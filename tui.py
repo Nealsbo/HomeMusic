@@ -1,4 +1,4 @@
-﻿"""Terminal dashboard and remote control for a running music server; no dependencies."""
+"""Terminal dashboard and remote control for a running music server; no dependencies."""
 from __future__ import annotations
 
 import argparse
@@ -14,8 +14,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-STATES = {'idle': 'ожидание', 'playing': 'воспроизведение', 'paused': 'пауза',
-          'buffering': 'буферизация', 'ended': 'завершено', 'error': 'ошибка'}
+STATES = {'idle': 'idle', 'playing': 'playing', 'paused': 'paused',
+          'buffering': 'buffering', 'ended': 'ended', 'error': 'error'}
 
 
 def clean(value):
@@ -40,8 +40,8 @@ def clock(seconds):
 
 
 def human_bytes(size):
-    for unit in ('Б', 'КиБ', 'МиБ', 'ГиБ', 'ТиБ'):
-        if size < 1024 or unit == 'ТиБ':
+    for unit in ('B', 'KiB', 'MiB', 'GiB', 'TiB'):
+        if size < 1024 or unit == 'TiB':
             return f'{size:.1f} {unit}'
         size /= 1024
 
@@ -51,10 +51,10 @@ def fetch_status(url, timeout=3):
     with urlopen(request, timeout=timeout) as response:
         body = response.read(4 * 1024 * 1024 + 1)
     if len(body) > 4 * 1024 * 1024:
-        raise ValueError('Слишком большой ответ сервера')
+        raise ValueError('Server response is too large')
     result = json.loads(body)
     if not isinstance(result, dict) or result.get('server') != 'online' or not isinstance(result.get('clients'), list):
-        raise ValueError('Сервер не поддерживает /api/status. Обновите и перезапустите сервер.')
+        raise ValueError('The server does not support /api/status. Update and restart the server.')
     return result
 
 
@@ -92,37 +92,37 @@ def keyboard_command(key, client):
 
 def render_status(data, url, selected=0, width=100, height=32, error=None, notice=None):
     width, height = max(20, width), max(6, height)
-    rows = ['ТИХАЯ ВОЛНА / ТЕРМИНАЛ', f'Сервер: {url}', '-' * width]
+    rows = ['QUIET WAVE / TERMINAL', f'Server: {url}', '-' * width]
     if notice:
         rows += [clean(notice)]
     if error:
-        rows += ['НЕТ СОЕДИНЕНИЯ: ' + clean(error), 'Показан последний полученный снимок.' if data else 'Ожидание подключения...']
+        rows += ['NO CONNECTION: ' + clean(error), 'Showing the last received snapshot.' if data else 'Waiting for connection...']
     if not data:
-        return '\n'.join(clip(r, width) for r in (rows + ['', 'q: выход | r: обновить'])[:height])
-    rows += [f"Медиатека: {data['tracks']} треков / {human_bytes(data['libraryBytes'])} | Потоков: {data['streams']}",
-             f"Работа: {clock(data['uptime'])} | Передано: {human_bytes(data['bytesSent'])}",
-             'Хранилище: ' + data['storage'], '']
+        return '\n'.join(clip(r, width) for r in (rows + ['', 'q: quit | r: refresh'])[:height])
+    rows += [f"Library: {data['tracks']} tracks / {human_bytes(data['libraryBytes'])} | Streams: {data['streams']}",
+             f"Uptime: {clock(data['uptime'])} | Transferred: {human_bytes(data['bytesSent'])}",
+             'Storage: ' + data['storage'], '']
     clients = data['clients']
-    rows.append(f'ПЛЕЕРЫ ({len(clients)})  j/k или стрелки: выбрать')
+    rows.append(f'PLAYERS ({len(clients)})  j/k or arrows: select')
     if not clients:
-        rows += ['  Нет отчётов от браузеров. Откройте обновлённый веб-плеер.']
+        rows += ['  No browser reports. Open the updated web player.']
     else:
         selected %= len(clients)
         first = max(0, selected - 2)
         for index in range(first, min(len(clients), first + 4)):
             c = clients[index]
-            status = STATES.get(c['state'], c['state']) if c['connected'] else 'нет свежего отчёта'
-            title = (c.get('track') or {}).get('title', 'Трек не выбран')
+            status = STATES.get(c['state'], c['state']) if c['connected'] else 'no recent report'
+            title = (c.get('track') or {}).get('title', 'No track selected')
             rows.append(f"{'>' if index == selected else ' '} {index + 1}. {c['name']} | {status} | {title}")
         c = clients[selected]
-        rows += ['', 'ВЫБРАННЫЙ ПЛЕЕР: ' + c['name'] + ' / ' + c.get('clientId', '')[-6:],
-                 f"Состояние: {STATES.get(c['state'], c['state'])} | Отчёт: {int(c['age'])} с назад",
-                 f"Плейлист / очередь: {c['playlistName']} ({c['queueCount']} треков)"]
+        rows += ['', 'SELECTED PLAYER: ' + c['name'] + ' / ' + c.get('clientId', '')[-6:],
+                 f"State: {STATES.get(c['state'], c['state'])} | Report: {int(c['age'])} s ago",
+                 f"Playlist / queue: {c['playlistName']} ({c['queueCount']} tracks)"]
         if c.get('track'):
-            rows += ['Трек: ' + c['track']['title'] + ' / ' + (c['track']['artist'] or 'Без исполнителя'),
-                     f"Позиция по отчёту: {clock(c['position'])} / {clock(c['duration'])}"]
+            rows += ['Track: ' + c['track']['title'] + ' / ' + (c['track']['artist'] or 'No artist'),
+                     f"Reported position: {clock(c['position'])} / {clock(c['duration'])}"]
         if c.get('error'):
-            rows.append('Ошибка: ' + c['error'])
+            rows.append('Error: ' + c['error'])
         queue_room = max(0, height - len(rows) - 7)
         preview = c['queue']
         # The API returns a small window around the current track, even for huge queues.
@@ -132,12 +132,12 @@ def render_status(data, url, selected=0, width=100, height=32, error=None, notic
             t = preview[offset]
             rows.append(f"  {'>' if (t.get('entryId') == c.get('queueEntryId') if t.get('entryId') else t['id'] == c['trackId']) else ' '} {c['queueStart'] + offset + 1}. {t['title']}")
     remaining = height - len(rows) - 4
-    rows += ['', f"ПЛЕЙЛИСТЫ ({len(data['playlists'])})"]
+    rows += ['', f"PLAYLISTS ({len(data['playlists'])})"]
     for p in data['playlists'][:max(0, remaining)]:
-        rows.append(f"  {p['name']} / {p['tracks']} треков")
+        rows.append(f"  {p['name']} / {p['tracks']} tracks")
     if not data['playlists'] and remaining > 0:
-        rows.append('  Плейлисты ещё не созданы.')
-    rows = rows[:height - 2] + ['-' * width, 'q: выход | j/k: плеер | Space: пуск/пауза | n/p: трек | h/l: ±10с | +/-: звук | t: перенос']
+        rows.append('  No playlists yet.')
+    rows = rows[:height - 2] + ['-' * width, 'q: quit | j/k: player | Space: play/pause | n/p: track | h/l: ±10s | +/-: volume | t: transfer']
     return '\n'.join(clip(r, width) for r in rows)
 
 
@@ -225,14 +225,14 @@ def main():
             print(json.dumps(result, ensure_ascii=False))
             return 0 if result['state'] == 'done' else 1
         except (OSError, ValueError, HTTPError, URLError) as error:
-            print('Не выполнено: ' + clean(error), file=sys.stderr)
+            print('Failed: ' + clean(error), file=sys.stderr)
             return 1
     once = args.once or args.json or not (sys.stdin.isatty() and sys.stdout.isatty()) or os.getenv('TERM') == 'dumb'
     if once:
         try:
             snapshot = fetch_status(args.url)
         except (OSError, ValueError, HTTPError, URLError) as error:
-            print('Нет соединения: ' + clean(error), file=sys.stderr)
+            print('No connection: ' + clean(error), file=sys.stderr)
             return 1
         print(json.dumps(snapshot, ensure_ascii=False, indent=2) if args.json else
               render_status(snapshot, args.url, width=shutil.get_terminal_size((100, 40)).columns, height=40))
@@ -250,24 +250,24 @@ def main():
                     selected = (selected + (1 if key == 'j' else -1)) % len(snapshot['clients'])
                 if key == '\x1b':
                     transfer_source = None
-                    notice = 'Перенос отменён.'
+                    notice = 'Transfer cancelled.'
                 if snapshot and snapshot['clients']:
                     client = snapshot['clients'][selected]
                     command = keyboard_command(key, client)
                     try:
                         if key in ('t', 'T'):
                             transfer_source = client['clientId']
-                            notice = 'Перенос: выберите принимающий плеер j/k, Enter — перенести, Esc — отмена.'
+                            notice = 'Transfer: select the receiving player with j/k, Enter to transfer, Esc to cancel.'
                         elif key in ('\r', '\n') and transfer_source:
                             result = send_command(args.url, client['clientId'], 'transfer', source=transfer_source)
                             pending, transfer_source = result['id'], None
-                            notice = 'Перенос отправлен; ожидание подтверждения.'
+                            notice = 'Transfer sent; waiting for confirmation.'
                         elif command and not transfer_source:
                             result = send_command(args.url, client['clientId'], *command)
                             pending = result['id']
-                            notice = 'Команда отправлена; ожидание подтверждения.'
+                            notice = 'Command sent; waiting for confirmation.'
                     except (OSError, ValueError, HTTPError, URLError) as exc:
-                        notice = 'Не выполнено: ' + str(exc)
+                        notice = 'Failed: ' + str(exc)
                 if key in ('r', 'R'):
                     next_fetch = 0
                 if time.monotonic() >= next_fetch:
@@ -278,7 +278,7 @@ def main():
                         if pending:
                             result = control_request(args.url, 'control-result', {'id': pending})
                             if result['state'] != 'pending':
-                                notice = 'Устройство подтвердило выполнение.' if result['state'] == 'done' else 'Не выполнено: ' + result['error']
+                                notice = 'The device confirmed completion.' if result['state'] == 'done' else 'Failed: ' + result['error']
                                 pending = None
                         error = None
                     except (OSError, ValueError, HTTPError, URLError) as exc:

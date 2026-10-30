@@ -26,7 +26,7 @@ class UndoTests(unittest.TestCase):
     def test_metadata_reset_and_sequential_conflict_checked_undo(self):
         a=self.library.action('metadata',{'id':self.ids[0],'title':'Manual','artist':''})
         b=self.library.action('metadata',{'id':self.ids[0],'title':'Later'})
-        with self.assertRaisesRegex(ValueError,'изменились позже'):self.undo(a)
+        with self.assertRaisesRegex(ValueError,'changed later'):self.undo(a)
         self.undo(b);self.assertEqual(self.library.track(self.ids[0])['title'],'Manual')
         reset=self.library.action('metadata',{'id':self.ids[0],'reset':True})
         self.undo(reset);self.assertEqual(self.library.track(self.ids[0])['title'],'Manual')
@@ -57,7 +57,7 @@ class UndoTests(unittest.TestCase):
         self.library.action('playlistTracks',{'id':key,'tracks':self.ids})
         deleted=self.library.action('deletePlaylist',{'id':key})
         (self.root/'First.mp3').unlink();self.library.scan()
-        with self.assertRaisesRegex(ValueError,'удалённые треки'):self.undo(deleted)
+        with self.assertRaisesRegex(ValueError,'deleted tracks'):self.undo(deleted)
         self.assertEqual(self.library.state()['playlists'],[])
 
     def test_move_and_undo_keep_track_identity_playlist_and_listening_references(self):
@@ -83,7 +83,7 @@ class UndoTests(unittest.TestCase):
     def test_undo_collision_preflights_entire_batch_without_overwriting(self):
         result=self.library.action('move',{'folder':'Target','tracks':self.ids})
         (self.root/'Second.mp3').write_bytes(b'new unrelated file')
-        with self.assertRaisesRegex(ValueError,'Путь уже занят'):self.undo(result)
+        with self.assertRaisesRegex(ValueError,'Path is already occupied'):self.undo(result)
         self.assertTrue((self.root/'Target'/'First.mp3').exists())
         self.assertEqual((self.root/'Second.mp3').read_bytes(),b'new unrelated file')
         self.assertEqual(self.library.operations.page()['items'][0]['state'],'done')
@@ -91,7 +91,7 @@ class UndoTests(unittest.TestCase):
     def test_changed_file_or_missing_original_directory_blocks_undo(self):
         result=self.library.action('move',{'folder':'Target','tracks':[self.ids[0]]})
         (self.root/'Target'/'First.mp3').write_bytes(b'new changed content longer')
-        with self.assertRaisesRegex(ValueError,'Файл изменён'):self.undo(result)
+        with self.assertRaisesRegex(ValueError,'File changed'):self.undo(result)
 
     def test_late_destination_collision_is_not_overwritten(self):
         original=move_no_replace
@@ -170,7 +170,7 @@ class UndoTests(unittest.TestCase):
         restored,key=self.interrupted()
         try:
             (self.root/'First.mp3').write_bytes(b'other file')
-            with self.assertRaisesRegex(ValueError,'неоднозначно'):restored.action('operation-recover',{'id':key})
+            with self.assertRaisesRegex(ValueError,'Ambiguous'):restored.action('operation-recover',{'id':key})
             self.assertEqual((self.root/'First.mp3').read_bytes(),b'other file')
             self.assertTrue(restored.state()['operationRecovery'])
         finally:restored.close()
@@ -188,7 +188,7 @@ class UndoTests(unittest.TestCase):
         self.library.scan();track=next(t for t in self.library.state()['tracks'] if t['path']=='Original/Nested.mp3')
         result=self.library.action('move',{'folder':'Target','tracks':[track['id']]})
         (self.root/'Original').rmdir()
-        with self.assertRaisesRegex(ValueError,'Папка назначения отсутствует'):self.undo(result)
+        with self.assertRaisesRegex(ValueError,'Destination folder is missing'):self.undo(result)
         self.assertTrue((self.root/'Target'/'Nested.mp3').exists())
 
     def test_sql_failure_rolls_back_file_moves_and_retains_failed_record(self):

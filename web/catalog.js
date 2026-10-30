@@ -1,9 +1,17 @@
 /* Client-side catalog grouping. Album identity includes album artist and release year. */
 (function(root) {
   'use strict';
-  const norm = value => String(value || '').normalize('NFKC').trim().toLocaleLowerCase('ru');
-  const collator = new Intl.Collator('ru',{numeric:true,sensitivity:'base'});
-  const compare = (a,b) => collator.compare(String(a || ''),String(b || ''));
+  const tr = key => root.MusicI18n ? root.MusicI18n.translate(key) : key;
+  const norm = value => String(value || '').normalize('NFKC').trim().toLowerCase();
+  let collator, collatorLocale;
+  const compare = (a,b) => {
+    const locale = root.MusicI18n?.locale || 'en';
+    if (locale !== collatorLocale) {
+      collator = new Intl.Collator(locale,{numeric:true,sensitivity:'base'});
+      collatorLocale = locale;
+    }
+    return collator.compare(String(a || ''),String(b || ''));
+  };
   const folder = track => track.path.includes('/') ? track.path.slice(0,track.path.lastIndexOf('/')) : '';
   const disc = track => Number(track.disc_number) > 0 ? Number(track.disc_number) : 1;
   const orderTracks = (a,b) => disc(a) - disc(b) ||
@@ -17,14 +25,14 @@
         // Untagged albums are kept within their source folder instead of merging
         // unrelated files from the whole storage into one fabricated album.
         const key = JSON.stringify([norm(artist),norm(album),norm(track.year),album ? '' : folder(track)]);
-        if (!this.albums.has(key)) this.albums.set(key,{key,title:album || 'Без альбома',artist:artist || 'Неизвестный исполнитель',
+        if (!this.albums.has(key)) this.albums.set(key,{key,title:album || tr("No album"),artist:artist || tr("Unknown artist"),
           artistName:artist,year:String(track.year || '').trim(),folder:album ? '' : folder(track),tracks:[],cover_id:''});
         const release = this.albums.get(key);
         release.tracks.push(track); if (!release.cover_id && track.cover_id) release.cover_id = track.cover_id;
         this.trackAlbums.set(track.id,key);
         const names = new Map();
         for (const value of [String(track.artist || '').trim(),artist]) if (value) names.set(norm(value),value);
-        if (!names.size) names.set('','Неизвестный исполнитель');
+        if (!names.size) names.set('',tr("Unknown artist"));
         for (const [artistKey,name] of names) {
           if (!this.artists.has(artistKey)) this.artists.set(artistKey,{key:artistKey,name,tracks:[],albumKeys:new Set(),cover_id:''});
           const person = this.artists.get(artistKey);

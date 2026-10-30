@@ -1,5 +1,5 @@
 let healthReport = null, healthOffset = 0, healthRequest = 0, healthActionBusy = false;
-const healthLabels = {missing:'Отсутствующие файлы',problems:'Доступность и изменения',metadata:'Ошибки тегов и обложек',exact:'Точные дубликаты',similar:'Совпадения названий'};
+const healthLabels = {missing:"Missing files",problems:"Availability and changes",metadata:"Tag and cover errors",exact:"Exact duplicates",similar:"Matching titles"};
 $('healthCategory').value ||= 'missing';
 function renderHealth() {
   const report = healthReport, running = report?.state === 'running';
@@ -9,22 +9,22 @@ function renderHealth() {
   $('healthPrevious').disabled = healthActionBusy || !report || healthOffset === 0;
   $('healthNext').disabled = healthActionBusy || !report || healthOffset + report.items.length >= report.categoryTotal;
   if (!report) return;
-  const stateText = {idle:'Проверка ещё не запускалась',running:'Проверка выполняется',done:'Проверка завершена',cancelled:'Проверка остановлена; результаты неполные',failed:'Ошибка проверки'}[report.state];
-  const phase = {catalog:'Снимок каталога',availability:'Проверка доступности',hashing:'Сравнение содержимого',cancelling:'Остановка проверки'}[report.phase];
-  $('healthStatus').textContent = stateText + (running && phase ? ' · ' + phase : '') + (report.error ? ': ' + report.error : '');
+  const stateText = {idle:tr("No check has been run yet"),running:tr("Check in progress"),done:tr("Check completed"),cancelled:tr("Check stopped; results are incomplete"),failed:tr("Check error")}[report.state];
+  const phase = {catalog:tr("Catalog snapshot"),availability:tr("Availability check"),hashing:tr("Content comparison"),cancelling:tr("Stopping the check")}[report.phase];
+  $('healthStatus').textContent = stateText + (running && phase ? ' · ' + phase : '') + (report.error ? ': ' + MusicI18n.message(report.error) : '');
   $('healthProgress').max = Math.max(1,report.phase === 'hashing' ? report.hashTotal : report.total);
   $('healthProgress').value = report.phase === 'hashing' ? report.hashed : report.checked;
   $('healthProgress').hidden = report.state === 'idle';
-  $('healthInfo').textContent = report.state === 'idle' ? '' : `Проверено файлов: ${report.checked} / ${report.total}. Обработано кандидатов: ${report.hashed} / ${report.hashTotal}. Прочитано для сравнения: ${bytes(report.bytesRead)}.` + (report.started ? ' Начало: ' + new Date(report.started * 1000).toLocaleString('ru-RU') + '.' : '');
+  $('healthInfo').textContent = report.state === 'idle' ? '' : `${tr("Files checked:")} ${report.checked} / ${report.total}. ${tr("Candidates processed:")} ${report.hashed} / ${report.hashTotal}. ${tr("Read for comparison:")} ${bytes(report.bytesRead)}.` + (report.started ? (' ' + tr("Started:") + " ") + new Date(report.started * 1000).toLocaleString(MusicI18n.locale) + '.' : '');
   $('healthCounts').innerHTML = Object.entries(healthLabels).map(([key,label]) => {
     const unchecked = key === 'exact' && report.mode === 'quick';
-    const detail = unchecked ? ' · не проверялись' : key === 'exact' ? ' · групп: ' + report.exactGroups : key === 'similar' ? ' · групп: ' + report.similarGroups : '';
-    return `<div class="stat-card"><b>${unchecked ? '—' : report.counts[key]}</b><span>${label}${detail}</span></div>`;
+    const detail = unchecked ? (' · ' + tr("not checked")) : key === 'exact' ? (' · ' + tr("groups:") + " ") + report.exactGroups : key === 'similar' ? (' · ' + tr("groups:") + " ") + report.similarGroups : '';
+    return `<div class="stat-card"><b>${unchecked ? '—' : report.counts[key]}</b><span>${escapeHTML(tr(label))}${escapeHTML(detail)}</span></div>`;
   }).join('');
-  $('healthPage').textContent = report.categoryTotal ? `${healthOffset + 1}–${healthOffset + report.items.length} из ${report.categoryTotal}` : '0 записей';
-  $('healthResults').innerHTML = report.items.map(item => `<article class="health-item">${item.group ? `<small>Группа ${item.groupNumber} · файлов: ${item.groupSize}</small>` : ''}<b>${escapeHTML(item.title || item.path)}</b><span>${escapeHTML(item.artist || 'Без исполнителя')}</span><code>${escapeHTML(item.path)}</code><p>${item.reason ? escapeHTML(item.reason) : bytes(item.size)}</p><button type="button" class="text-button" data-health-track="${escapeHTML(item.id)}">Показать в медиатеке</button></article>`).join('');
+  $('healthPage').textContent = report.categoryTotal ? `${healthOffset + 1}–${healthOffset + report.items.length} ${tr("of")} ${report.categoryTotal}` : ('0 ' + tr("entries"));
+  $('healthResults').innerHTML = report.items.map(item => `<article class="health-item">${item.group ? `<small>${escapeHTML(tr("Group"))} ${item.groupNumber} · ${escapeHTML(tr("files:"))} ${item.groupSize}</small>` : ''}<b>${escapeHTML(item.title || item.path)}</b><span>${escapeHTML(item.artist || tr("No artist"))}</span><code>${escapeHTML(item.path)}</code><p>${item.reason ? escapeHTML(MusicI18n.message(item.reason)) : bytes(item.size)}</p><button type="button" class="text-button" data-health-track="${escapeHTML(item.id)}">${escapeHTML(tr("Show in library"))}</button></article>`).join('');
   $('healthEmpty').hidden = report.items.length > 0;
-  $('healthEmpty').textContent = report.state === 'idle' ? 'Запустите проверку коллекции.' : report.category === 'exact' && report.mode === 'quick' ? 'Для сравнения содержимого запустите «Найти дубликаты».' : running ? 'В этом разделе пока нет результатов. Проверка продолжается.' : 'В этом разделе результатов нет.';
+  $('healthEmpty').textContent = report.state === 'idle' ? tr("Start a collection check.") : report.category === 'exact' && report.mode === 'quick' ? tr("Run “Find duplicates” to compare file contents.") : running ? tr("No results in this category yet. The check is still running.") : tr("No results in this category.");
 }
 async function loadHealth(offset = healthOffset) {
   const request = ++healthRequest;
@@ -52,9 +52,9 @@ $('healthNext').onclick = handle(() => loadHealth(healthOffset + 50));
 $('healthResults').onclick = event => {
   const button = event.target.closest('[data-health-track]'); if (!button) return;
   const track = trackMap.get(button.dataset.healthTrack);
-  if (!track) return toast('Запись больше не находится в текущем каталоге. Путь сохранён в отчёте.');
+  if (!track) return toast(tr("This entry is no longer in the current catalog. Its path is saved in the report."));
   setHomeMode('table',false); $('folderFilter').value = '*'; $('search').value = track.path; showView('library');
 };
 setInterval(() => {
-  if (view === 'health' && !document.hidden && !healthActionBusy) loadHealth().catch(e => { $('healthStatus').textContent = 'Не удалось обновить отчёт: ' + e.message; });
+  if (view === 'health' && !document.hidden && !healthActionBusy) loadHealth().catch(e => { $('healthStatus').textContent = (tr("Could not refresh the report:") + " ") + e.message; });
 },2000);

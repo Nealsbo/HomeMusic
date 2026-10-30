@@ -1,7 +1,8 @@
 {
-  "music_dir": "./music",
+  "music_dir": "../Music/",
   "database": "./data/library.sqlite3",
-  "host": "127.0.0.1",
+  "listen": true,
+  "host": "0.0.0.0",
   "port": 8080,
   "max_upload_mb": 512
 }

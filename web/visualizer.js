@@ -5,17 +5,17 @@ let waveMode = stored('waveMode','off');
 let waveLastMode = stored('waveLastMode','eco');
 if (!['eco','smooth','high'].includes(waveLastMode)) waveLastMode = 'eco';
 const waveMessages = {
-  active:'Волна реагирует на звук', off:'Анимация выключена', idle:'Ожидание воспроизведения',
-  reduced:'Анимация отключена системной настройкой', gesture:'Нажмите воспроизведение или включите волну',
-  unavailable:'Визуализация недоступна в этом браузере'
+  active:"Wave follows the music", off:"Animation is off", idle:"Waiting for playback",
+  reduced:"Animation disabled by system preferences", gesture:"Press play or enable the wave",
+  unavailable:"Visualization is unavailable in this browser"
 };
 const audioWave = new AudioWave(audio, {
-  smoothing: 0.4, // 0 = без сглаживания высоты, 1 = текущее, 2 = мягче; можно менять дробно.
+  smoothing: 0.4, // 0 = No height smoothing at 0, current at 1, softer at 2; fractional values are supported.
   createContext:() => { const Context = window.AudioContext || window.webkitAudioContext; return Context && waveDrawing ? new Context() : null; },
   hidden:() => document.hidden || $('wavePanel').hidden,
   reduced:() => !!reducedMotion?.matches,
   schedule:(callback,delay) => setTimeout(callback,delay), cancel:id => clearTimeout(id),
-  status:state => { $('waveStatus').textContent = waveMessages[state]; },
+  status:state => { $('waveStatus').textContent = tr(waveMessages[state]); },
   draw:(levels,active) => {
     if (!waveDrawing) return;
     const w = waveCanvas.width, h = waveCanvas.height;
@@ -35,7 +35,7 @@ function setWaveMode(value, gesture = false) {
   if (waveMode !== 'off') { waveLastMode = waveMode; store('waveLastMode',waveMode); }
   $('waveModeSetting').value = waveMode;
   $('waveToggle').setAttribute('aria-pressed',String(waveMode !== 'off'));
-  $('waveToggle').textContent = waveMode === 'off' ? 'Включить волну' : 'Выключить волну';
+  $('waveToggle').textContent = waveMode === 'off' ? tr("Enable wave") : tr("Disable wave");
   audioWave.setMode(waveMode);
   if (gesture) audioWave.unlock();
 }

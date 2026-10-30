@@ -57,6 +57,16 @@ class MusicServerTests(unittest.TestCase):
     def first(self):
         return next(t for t in self.library.state()['tracks'] if t['path'].endswith('.mp3'))
 
+    def test_localization_assets_are_json_and_traversal_is_rejected(self):
+        for language in ('en', 'ru', 'languages'):
+            status, headers, body = self.request('GET', '/locales/' + language + '.json')
+            self.assertEqual(status, 200)
+            self.assertEqual(headers['Content-Type'], 'application/json; charset=utf-8')
+            self.assertTrue(json.loads(body))
+        for path in ('/locales/../config.example.json', '/locales/%2e%2e/config.example.json', '/locales/missing.json'):
+            status, _, _ = self.request('GET', path)
+            self.assertEqual(status, 404)
+
     def test_scan_preserves_ids_metadata_and_removes_missing(self):
         t = self.first()
         self.action('metadata', dict(id=t['id'], title='Changed', artist='A', album='B'))
@@ -182,9 +192,9 @@ class MusicServerTests(unittest.TestCase):
             wav.setframerate(8000)
             wav.writeframes(b'\0\0' * 800)
         content = buffer.getvalue()
-        folder = self.root / 'Вложенная папка'
+        folder = self.root / 'Nested \u041f\u0430\u043f\u043a\u0430'
         folder.mkdir()
-        source = folder / 'Трек #1.WAV'
+        source = folder / 'Track \u041c\u0443\u0437\u044b\u043a\u0430 #1.WAV'
         source.write_bytes(content)
         self.library.scan()
         track = next(t for t in self.library.state()['tracks'] if t['path'].endswith('.WAV'))

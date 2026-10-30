@@ -1,4 +1,4 @@
-﻿"""On-demand collection audits. Read files in one worker; never change the catalog."""
+"""On-demand collection audits. Read files in one worker; never change the catalog."""
 from collections import defaultdict
 import copy
 import hashlib
@@ -41,10 +41,10 @@ class CollectionHealth:
     def start(self, data):
         mode = data.get('mode', 'quick')
         if mode not in ('quick', 'duplicates'):
-            raise ValueError('Неизвестный режим проверки')
+            raise ValueError('Unknown check mode')
         with self.lock:
             if self.thread and self.thread.is_alive():
-                raise ValueError('Проверка уже выполняется')
+                raise ValueError('A check is already running')
             self.stop = threading.Event()
             self.results = {key: [] for key in CATEGORIES}
             self.state = dict(jobId=uuid.uuid4().hex, state='running', phase='catalog', mode=mode,
@@ -57,7 +57,7 @@ class CollectionHealth:
     def cancel(self, data):
         with self.lock:
             if data.get('jobId') != self.state['jobId'] or not self.state['jobId']:
-                raise ValueError('Отчёт изменился; обновите страницу проверки')
+                raise ValueError('Report changed; refresh the check page')
             if self.state['state'] == 'running':
                 self.stop.set()
                 self.state['phase'] = 'cancelling'
@@ -70,13 +70,13 @@ class CollectionHealth:
 
     def report(self, category='missing', offset=0, limit=50, job_id=None):
         if category not in CATEGORIES:
-            raise ValueError('Неизвестный раздел отчёта')
+            raise ValueError('Unknown report category')
         offset, limit = int(offset), int(limit)
         if offset < 0 or not 1 <= limit <= 100:
-            raise ValueError('Некорректная страница отчёта')
+            raise ValueError('Invalid report page')
         with self.lock:
             if job_id and job_id != self.state['jobId']:
-                raise ValueError('Отчёт изменился; обновите страницу проверки')
+                raise ValueError('Report changed; refresh the check page')
             items = self.results[category]
             return dict(**self.state, counts={key: len(value) for key, value in self.results.items()},
                         category=category, offset=offset, limit=limit, categoryTotal=len(items),
@@ -151,9 +151,9 @@ class CollectionHealth:
                     path = self.library.path(track['path'])
                     info = path.stat()
                     if not stat.S_ISREG(info.st_mode):
-                        self.issue('problems', track, 'Путь не является обычным файлом', 'not_file')
+                        self.issue('problems', track, 'Path is not a regular file', 'not_file')
                     elif info.st_size == 0:
-                        self.issue('problems', track, 'Файл пуст', 'empty')
+                        self.issue('problems', track, 'File is empty', 'empty')
                     else:
                         with path.open('rb') as stream:
                             if not stream.read(1):
@@ -162,16 +162,16 @@ class CollectionHealth:
                         track['signature'] = signature(info)
                         readable.append(track)
                         if info.st_size != track['size'] or info.st_mtime_ns != track['file_mtime_ns']:
-                            self.issue('problems', track, 'Файл изменился после индексации; обновите индекс медиатеки', 'index_outdated')
+                            self.issue('problems', track, 'File changed since indexing; refresh the library index', 'index_outdated')
                     error = track.get('metadata_error')
-                    if error and not error.startswith('ffprobe не найден:'):
+                    if error and not error.startswith('ffprobe not found:'):
                         self.issue('metadata', track, error, 'metadata')
                 except FileNotFoundError:
-                    self.issue('missing', track, 'Файл отсутствует по пути из каталога', 'missing')
+                    self.issue('missing', track, 'File is missing at the catalog path', 'missing')
                 except FileChanged:
-                    self.issue('problems', track, 'Файл изменился во время проверки; повторите проверку', 'changed')
+                    self.issue('problems', track, 'File changed during the check; run the check again', 'changed')
                 except (OSError, ValueError) as error:
-                    self.issue('problems', track, 'Файл недоступен: ' + str(error), 'unreadable')
+                    self.issue('problems', track, 'File is unavailable: ' + str(error), 'unreadable')
                 with self.lock:
                     self.state['checked'] += 1
                 if self.stop.wait(.001):
@@ -194,9 +194,9 @@ class CollectionHealth:
                     except CheckCancelled:
                         break
                     except FileChanged:
-                        self.issue('problems', track, 'Файл изменился во время чтения; совпадение не подтверждено', 'changed')
+                        self.issue('problems', track, 'File changed while reading; match not confirmed', 'changed')
                     except (OSError, ValueError) as error:
-                        self.issue('problems', track, 'Не удалось прочитать файл целиком: ' + str(error), 'hash_error')
+                        self.issue('problems', track, 'Could not read the entire file: ' + str(error), 'hash_error')
                     with self.lock:
                         self.state['hashed'] += 1
                 # Files changed after their own hash must not appear as confirmed copies.
@@ -208,7 +208,7 @@ class CollectionHealth:
                             raise FileChanged()
                     except (OSError, ValueError, FileChanged):
                         digests.pop(track['id'], None)
-                        self.issue('problems', track, 'Файл изменился или исчез до завершения проверки', 'changed')
+                        self.issue('problems', track, 'File changed or disappeared before the check completed', 'changed')
             exact, exact_count = self._groups(readable, digests, True)
             similar, similar_count = self._groups(readable, digests, False)
             with self.lock:

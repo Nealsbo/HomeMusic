@@ -16,16 +16,16 @@ class ControlStore:
         now = time.time()
         for command in list(self.commands.values()):
             if command['state'] == 'pending' and now > command['expires']:
-                self.finish(command, False, 'Время ожидания ответа устройства истекло')
+                self.finish(command, False, 'The device response timed out')
         self.commands = {k: v for k, v in self.commands.items() if now - v['created'] < 300}
 
     def connected(self, client_id):
         identifier(client_id)
         client = self.library.clients.get(client_id)
         if not client or time.time() - client['lastSeen'] >= 45:
-            raise ValueError('Устройство не на связи')
+            raise ValueError('Device is offline')
         if client.get('controlVersion') != 1:
-            raise ValueError('Обновите страницу на выбранном устройстве')
+            raise ValueError('Refresh the page on the selected device')
         return client
 
     @staticmethod
@@ -34,7 +34,7 @@ class ControlStore:
 
     def add(self, key, target, action, value=None, parent=None):
         if len(self.commands) >= 512:
-            raise ValueError('Слишком много команд; повторите позже')
+            raise ValueError('Too many commands; try again later')
         command = dict(id=key, target=target, action=action, value=value, parent=parent,
                        created=time.time(), expires=time.time() + (75 if action == 'transfer' else 20),
                        state='pending', error='', phase='')
@@ -53,32 +53,32 @@ class ControlStore:
             key, target = identifier(data.get('id')), identifier(data.get('target'))
             action, value = data.get('action'), data.get('value')
             if action not in {'play', 'pause', 'next', 'previous', 'seek', 'volume', 'transfer'}:
-                raise ValueError('Неизвестная команда')
+                raise ValueError('Unknown command')
             signature = (target, action, value, data.get('source'))
             old = self.commands.get(key)
             if old:
                 if old.get('signature') != signature:
-                    raise ValueError('Идентификатор команды уже используется')
+                    raise ValueError('Command ID is already in use')
                 return self.public(old)
             self.connected(target)
             if action in {'seek', 'volume'}:
                 if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
-                    raise ValueError('Некорректное значение команды')
+                    raise ValueError('Invalid command value')
                 if not 0 <= value <= (1 if action == 'volume' else 7 * 86400):
-                    raise ValueError('Значение команды вне диапазона')
+                    raise ValueError('Command value out of range')
             if action not in {'seek', 'volume'} and value is not None:
-                raise ValueError('Команда не принимает значение')
+                raise ValueError('This command does not accept a value')
             source = None
             if action == 'transfer':
                 source = identifier(data.get('source'))
                 if source == target:
-                    raise ValueError('Выберите другое устройство для переноса')
+                    raise ValueError('Select another device for the transfer')
                 self.connected(source)
                 transfers = [c for c in self.commands.values() if c['action'] == 'transfer' and c['state'] == 'pending']
                 if len(transfers) >= 4 or any({source, target} & {c['source'], c['target']} for c in transfers):
-                    raise ValueError('Перенос между этими устройствами уже выполняется или достигнут лимит переносов')
+                    raise ValueError('A transfer between these devices is already in progress or the transfer limit has been reached')
                 if len(self.commands) > 508:
-                    raise ValueError('Слишком много команд; повторите позже')
+                    raise ValueError('Too many commands; try again later')
             command = self.add(key, target, action, value)
             command['signature'] = copy.deepcopy(signature)
             if source:
@@ -91,7 +91,7 @@ class ControlStore:
             self.cleanup()
             command = self.commands.get(identifier(data.get('id')))
             if not command:
-                raise ValueError('Команда не найдена или устарела')
+                raise ValueError('Command not found or expired')
             return self.public(command)
 
     def poll(self, data):
@@ -123,12 +123,12 @@ class ControlStore:
             self.cleanup()
             command = self.commands.get(identifier(data.get('id')))
             if not command or command['target'] != identifier(data.get('clientId')) or command['action'] == 'transfer':
-                raise ValueError('Команда не адресована этому плееру')
+                raise ValueError('Command is not addressed to this player')
             if command['state'] != 'pending':
                 return self.public(command)
             ok = data.get('ok')
             if not isinstance(ok, bool):
-                raise ValueError('Ожидается результат выполнения команды')
+                raise ValueError('Expected a command result')
             self.finish(command, ok, data.get('error', ''))
             parent = self.commands.get(command.get('parent'))
             if ok and parent and parent['state'] == 'pending':
@@ -136,11 +136,11 @@ class ControlStore:
                     if command['action'] == 'export':
                         snapshot = data.get('snapshot')
                         if not isinstance(snapshot, dict) or len(json.dumps(snapshot, ensure_ascii=False).encode()) > 6 * 1024 * 1024:
-                            raise ValueError('Некорректный снимок очереди')
+                            raise ValueError('Invalid queue snapshot')
                         guard = snapshot.get('guard')
                         if (not isinstance(guard, dict) or not isinstance(guard.get('generation'), int)
                                 or isinstance(guard.get('generation'), bool) or guard['generation'] < 0):
-                            raise ValueError('Некорректная защита исходного плеера')
+                            raise ValueError('Invalid source player guard')
                         identifier(guard.get('entryId'))
                         parent['guard'] = copy.deepcopy(guard)
                         self.child(parent, parent['target'], 'import', copy.deepcopy(snapshot))

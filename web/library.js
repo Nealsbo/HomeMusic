@@ -9,12 +9,8 @@ async function refresh() {
     if (queueModel.current) await loadCurrent(!audio.paused);
     else stopPlayback();
   }
-  const folders = state.folders.map(f => [f, f || 'Корневая папка']);
-  options($('folderFilter'), [['*', 'Все папки'], ...folders], '*');
-  for (const id of ['moveFolder','uploadFolder']) options($(id), folders);
+  renderFolderOptions();
   options($('addPlaylist'), state.playlists.map(p => [p.id, p.name]));
-  $('brandName').textContent = state.settings.title || 'Тихая волна';
-  document.title = (state.settings.title || 'Тихая волна') + ' · Музыка';
   $('libraryCount').textContent = state.tracks.length;
   $('trackCount').textContent = state.tracks.length;
   $('folderCount').textContent = state.folders.length;
@@ -22,13 +18,23 @@ async function refresh() {
   $('deviceName').value = deviceName;
   $('storagePath').value = state.storage;
   $('operationRecoveryNotice').hidden = !state.operationRecovery;
-  $('serverTitle').value = state.settings.title || 'Тихая волна';
+  $('serverTitle').value = state.settings.title || tr("Quiet Wave");
   $('defaultVolume').value = state.settings.defaultVolume ?? .75;
-  const metadata = state.metadata;
-  $('indexStatus').textContent = !metadata ? '' : !metadata.tags ? 'Для чтения тегов установите ffprobe; путь можно указать в настройках запуска сервера.' : metadata.pending ? `Чтение тегов и обложек: осталось ${metadata.pending} файлов. Музыку уже можно слушать.` : 'Теги и обложки обновлены' + (!metadata.covers ? ' · Для обложек нужен ffmpeg.' : '.');
-  $('uploadLimit').textContent = `Лимит загрузки одного файла: ${state.maxUploadMB} МБ. Файлы передаются без перекодирования.`;
+  renderLibraryMessages();
   renderNav(); renderTracks(); renderFolders(); renderQueue(); updateNowPlaying();
-  document.querySelector('.connection').lastChild.textContent = ' Подключено';
+  document.querySelector('.connection').lastChild.textContent = (' ' + tr("Connected"));
+}
+function renderFolderOptions() {
+  const folders = state.folders.map(folder => [folder, folder || tr('Root folder')]);
+  options($('folderFilter'), [['*', tr('All folders')], ...folders], '*');
+  for (const id of ['moveFolder', 'uploadFolder']) options($(id), folders);
+}
+function renderLibraryMessages() {
+  $('brandName').textContent = state.settings.title || tr('Quiet Wave');
+  document.title = (state.settings.title || tr('Quiet Wave')) + ' · ' + tr('Music');
+  const metadata = state.metadata;
+  $('indexStatus').textContent = !metadata ? '' : !metadata.tags ? tr("Install ffprobe to read tags; its path can be set in the server startup options.") : metadata.pending ? tr('Reading tags and covers: {count} files remaining. You can already listen to music.', {count:metadata.pending}) : tr("Tags and covers updated") + (!metadata.covers ? (' · ' + tr("Cover images require ffmpeg.")) : '.');
+  $('uploadLimit').textContent = tr('Upload limit per file: {size} MB. Files are transferred without transcoding.', {size:state.maxUploadMB});
 }
 function filteredTracks() {
   const p = state.playlists.find(p => p.id === playlistId);
@@ -39,7 +45,7 @@ function filteredTracks() {
   const search = $('search').value.toLocaleLowerCase().trim(), folder = $('folderFilter').value;
   tracks = tracks.filter(t => (!search || [t.title,t.artist,t.album,t.album_artist,t.genre,t.year,t.path].join(' ').toLocaleLowerCase().includes(search)) && (folder === '*' || folder === '' || folderOf(t) === folder || folderOf(t).startsWith(folder + '/')));
   const sort = $('sort').value;
-  if (sort !== 'manual') tracks.sort((a,b) => ['size','modified','duration','track_number','disc_number'].includes(sort) ? (sort.endsWith('_number') ? a[sort] - b[sort] : b[sort] - a[sort]) : String(a[sort] || '').localeCompare(b[sort], 'ru', {numeric:true}));
+  if (sort !== 'manual') tracks.sort((a,b) => ['size','modified','duration','track_number','disc_number'].includes(sort) ? (sort.endsWith('_number') ? a[sort] - b[sort] : b[sort] - a[sort]) : String(a[sort] || '').localeCompare(b[sort], MusicI18n.locale, {numeric:true}));
   if (sort === 'manual') {
     if (list === 'recent') tracks.sort((a,b) => b.last_played - a.last_played);
     if (list === 'frequent') tracks.sort((a,b) => b.play_count - a.play_count || b.last_played - a.last_played);
@@ -61,16 +67,16 @@ async function reorder(from, to) {
 }
 async function updateStats() {
   const s = await api('stats');
-  $('statsGrid').innerHTML = [[s.tracks,'Треков в медиатеке'],[s.playlists,'Ваших плейлистов'],[bytes(s.libraryBytes),'Размер коллекции'],[s.streams,'Активных потоков']].map(([n,label]) => `<div class="stat-card"><b>${n}</b><span>${label}</span></div>`).join('');
-  $('serverStats').innerHTML = [['Время работы',`${Math.floor(s.uptime / 3600)} ч ${Math.floor(s.uptime % 3600 / 60)} мин`],['Свободно на диске',bytes(s.diskFree)],['Передано аудио',bytes(s.bytesSent)],['Запросов чтения',s.requests]].map(([a,b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  $('statsGrid').innerHTML = [[s.tracks,tr("Tracks in library")],[s.playlists,tr("Your playlists")],[bytes(s.libraryBytes),tr("Collection size")],[s.streams,tr("Active streams")]].map(([n,label]) => `<div class="stat-card"><b>${n}</b><span>${escapeHTML(label)}</span></div>`).join('');
+  $('serverStats').innerHTML = [[tr("Uptime"),`${Math.floor(s.uptime / 3600)} ${tr("h")} ${Math.floor(s.uptime % 3600 / 60)} ${tr("min")}`],[tr("Free disk space"),bytes(s.diskFree)],[tr("Audio transferred"),bytes(s.bytesSent)],[tr("Read requests"),s.requests]].map(([a,b]) => `<dt>${escapeHTML(a)}</dt><dd>${escapeHTML(b)}</dd>`).join('');
 }
 function uploadFile(file, folder) {
   return new Promise((resolve,reject) => {
     const xhr = new XMLHttpRequest(); xhr.open('PUT','/api/upload');
     xhr.setRequestHeader('X-File-Path', encodeURIComponent((folder ? folder + '/' : '') + file.name));
     xhr.upload.onprogress = e => { if (e.lengthComputable) $('uploadProgress').textContent = `${file.name} · ${Math.round(e.loaded / e.total * 100)}%`; };
-    xhr.onload = () => { let result; try { result = JSON.parse(xhr.responseText); } catch { result = {}; } if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(Error(result.error || 'Ошибка загрузки')); };
-    xhr.onerror = () => reject(Error('Соединение прервано')); xhr.send(file);
+    xhr.onload = () => { let result; try { result = JSON.parse(xhr.responseText); } catch { result = {}; } if (xhr.status >= 200 && xhr.status < 300) resolve(); else reject(Error(MusicI18n.message(result.error || 'Upload error'))); };
+    xhr.onerror = () => reject(Error(tr("Connection interrupted"))); xhr.send(file);
   });
 }
 async function upload(files) {
@@ -80,11 +86,11 @@ async function upload(files) {
   try {
     for (const file of files) {
       try {
-        if (file.size > state.maxUploadMB * 1048576) throw Error('Превышен лимит файла');
+        if (file.size > state.maxUploadMB * 1048576) throw Error(tr("File size limit exceeded"));
         await uploadFile(file, folder); success++;
       } catch(e) { failures.push(`${file.name}: ${e.message}`); }
     }
-    $('uploadProgress').textContent = `Загружено: ${success} из ${files.length}.` + (failures.length ? '\n' + failures.join('\n') : ' Можно добавить ещё файлы.');
-    await refresh(); toast(`Загружено файлов: ${success}`);
+    $('uploadProgress').textContent = tr('Uploaded: {count} of {total}.', {count:success,total:files.length}) + (failures.length ? '\n' + failures.join('\n') : (' ' + tr("You can add more files.")));
+    await refresh(); toast(tr('Files uploaded: {count}', {count:success}));
   } finally { uploading = false; $('chooseFiles').disabled = false; $('fileInput').value = ''; }
 }

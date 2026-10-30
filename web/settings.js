@@ -20,4 +20,27 @@ function applyTheme(value) {
 applyTheme(stored('theme', 'forest'));
 $('themeSelect').onchange = e => applyTheme(e.target.value);
 
-$('settingsForm').onsubmit = handle(async e => { e.preventDefault(); const device = await api('device',{id:deviceId,name:$('deviceName').value}); deviceName = device.name; store('device',{id:deviceId,name:deviceName}); await api('settings',{title:$('serverTitle').value,defaultVolume:Number($('defaultVolume').value)}); await refresh(); reportPlayback(); toast('Настройки сохранены'); });
+options($('languageSetting'), MusicI18n.languages.map(item => [item.code, item.name]), MusicI18n.language);
+$('languageSetting').value = MusicI18n.language;
+$('languageSetting').onchange = handle(async event => {
+  try { await MusicI18n.setLanguage(event.target.value); }
+  finally { $('languageSetting').value = MusicI18n.language; }
+});
+MusicI18n.onChange = async () => {
+  // Refresh presentation without replacing the audio source, queue, or form edits.
+  catalog = new MusicCatalog(state.tracks);
+  renderLibraryMessages();
+  renderFolderOptions();
+  document.querySelector('.connection').lastChild.textContent = ' ' + tr('Connected');
+  renderNav(); renderTracks(); renderFolders(); renderQueue(); updateNowPlaying();
+  $('sizeCount').textContent = bytes(state.tracks.reduce((sum, track) => sum + track.size, 0));
+  renderHealth(); renderSelectedDevice();
+  setWaveMode(waveMode);
+  audioWave.sync();
+  if (view === 'history') await loadHistory(true);
+  if (view === 'operations') await loadOperations();
+  if (view === 'stats') await updateStats();
+  if ($('devicesDialog').open) await refreshDevices();
+};
+
+$('settingsForm').onsubmit = handle(async e => { e.preventDefault(); const device = await api('device',{id:deviceId,name:$('deviceName').value}); deviceName = device.name; store('device',{id:deviceId,name:deviceName}); await api('settings',{title:$('serverTitle').value,defaultVolume:Number($('defaultVolume').value)}); await refresh(); reportPlayback(); toast(tr("Settings saved")); });

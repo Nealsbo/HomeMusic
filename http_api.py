@@ -151,16 +151,18 @@ class Handler(BaseHTTPRequestHandler):
                         lines.extend([f"#EXTINF:-1,{row['artist']} - {row['title']}", row['path']])
                 return self.reply(200, ('\n'.join(lines) + '\n').encode('utf-8'), 'audio/x-mpegurl', head)
             assets = {'/': 'index.html', '/style.css': 'style.css',
-                      **{f'/{name}.js': f'{name}.js' for name in ('operations','health','devices','audio-wave','visualizer','queue','listen-session','catalog','core','settings','library','views','collection','player','history','app')}}
+                      **{f'/{name}.js': f'{name}.js' for name in ('i18n','bootstrap','operations','health','devices','audio-wave','visualizer','queue','listen-session','catalog','core','settings','library','views','collection','player','history','app')}}
+            if re.fullmatch(r'/locales/[a-zA-Z0-9_-]+\.json', path):
+                return self.send_file(WEB / path.lstrip('/'), head)
             if path not in assets:
-                return self.reply(404, {'error': 'Не найдено'}, head=head)
+                return self.reply(404, {'error': 'Not found'}, head=head)
             return self.send_file(WEB / assets[path], head)
         except CONNECTION_ERRORS:
             raise  # Handled at the request boundary, including HEAD and JSON writes.
         except (ValueError, FileNotFoundError) as e:
             self.reply(404, {'error': str(e)}, head=head)
         except PermissionError:
-            self.reply(403, {'error': 'Нет прав чтения файла у процесса сервера'}, head=head)
+            self.reply(403, {'error': 'The server process has no permission to read this file'}, head=head)
         except OSError as e:
             self.reply(409, {'error': str(e)}, head=head)
 
@@ -183,7 +185,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.range_error(size)
                 status = 206
             self.send_response(status)
-            types = {'.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+            types = {'.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8',
                      '.html': 'text/html; charset=utf-8', '.jpg': 'image/jpeg'}
             self.send_header('Content-Type', types.get(path.suffix.lower()) or
                              MEDIA_TYPES.get(path.suffix.lower(), 'application/octet-stream'))
@@ -225,7 +227,7 @@ class Handler(BaseHTTPRequestHandler):
     def check_origin(self):
         origin = self.headers.get('Origin')
         if origin and urlsplit(origin).netloc != self.headers.get('Host'):
-            raise ValueError('Запрос с другого сайта отклонён')
+            raise ValueError('Cross-site request rejected')
 
     def do_POST(self):
         try:
@@ -234,13 +236,13 @@ class Handler(BaseHTTPRequestHandler):
             limit = (8 if urlsplit(self.path).path == '/api/control-ack' else 2) * 1024 * 1024
             if length <= 0 or length > limit:
                 self.close_connection = True
-                return self.reply(413, {'error': 'Слишком большой запрос'})
+                return self.reply(413, {'error': 'Request is too large'})
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict):
-                raise ValueError('Ожидается JSON объект')
+                raise ValueError('Expected a JSON object')
             path = urlsplit(self.path).path
             if not path.startswith('/api/'):
-                raise ValueError('Неизвестный адрес')
+                raise ValueError('Unknown endpoint')
             result = self.library.action(path.removeprefix('/api/'), data)
             self.reply(200, result)
         except (ValueError, KeyError, TypeError, sqlite3.IntegrityError) as e:
@@ -253,24 +255,24 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.check_origin()
             if urlsplit(self.path).path != '/api/upload':
-                raise ValueError('Неизвестный адрес')
+                raise ValueError('Unknown endpoint')
             length = int(self.headers.get('Content-Length', '0'))
             if length <= 0 or length > self.library.max_upload_mb * 1024 * 1024:
                 self.close_connection = True
-                return self.reply(413, {'error': f'Лимит файла: {self.library.max_upload_mb} МБ'})
+                return self.reply(413, {'error': f'File limit: {self.library.max_upload_mb} MB'})
             relative = unquote(self.headers.get('X-File-Path', ''))
             target = self.library.path(relative)
             if target.suffix.lower() not in FORMATS:
-                raise ValueError('Неподдерживаемый аудиоформат')
+                raise ValueError('Unsupported audio format')
             if not target.parent.is_dir():
-                raise ValueError('Папка не найдена')
+                raise ValueError('Folder not found')
             temporary = target.parent / ('.upload-' + uuid.uuid4().hex)
             with temporary.open('xb') as output:
                 remaining = length
                 while remaining:
                     chunk = self.rfile.read(min(65536, remaining))
                     if not chunk:
-                        raise ValueError('Загрузка прервана')
+                        raise ValueError('Upload interrupted')
                     output.write(chunk)
                     remaining -= len(chunk)
             with self.library.lock:

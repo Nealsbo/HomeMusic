@@ -16,7 +16,7 @@ function tableScopeInfo() {
   if (!tableScope) return null;
   const entity = tableScope.kind === 'album' ? catalog.albums.get(tableScope.key) : catalog.artists.get(tableScope.key);
   return entity ? {kind:tableScope.kind,entity,title:tableScope.kind === 'album' ? entity.title : entity.name,tracks:entity.tracks} :
-    {kind:tableScope.kind,title:'Запись больше не найдена',tracks:[]};
+    {kind:tableScope.kind,title:tr("Entry no longer found"),tracks:[]};
 }
 function updateHomeLayout() {
   const home = view === 'library' || view === 'favorites';
@@ -33,7 +33,7 @@ function updateHomeLayout() {
   $('homeModeSetting').value = homeMode;
   const scope = !playlistId && !collection ? tableScopeInfo() : null;
   $('tableScopeBar').hidden = !scope;
-  $('tableScopeName').textContent = scope ? `${scope.kind === 'album' ? 'Альбом' : 'Исполнитель'}: ${scope.title}` : '';
+  $('tableScopeName').textContent = scope ? `${scope.kind === 'album' ? tr("Album") : tr("Artist")}: ${scope.title}` : '';
 }
 function setHomeMode(mode, navigate = true) {
   homeMode = mode === 'collection' ? 'collection' : 'table';
@@ -56,10 +56,10 @@ function openCollectionPage(page, key = '') {
 }
 function collectionRouteInfo(full = false, override = null) {
   const route = override || (view === 'favorites' ? {page:'favorites'} : collectionRoute);
-  const names = {overview:'Коллекция',tracks:'Все треки',favorites:'Избранное',recent:'Недавно прослушанное',frequent:'Часто включаемое',added:'Недавно добавленное'};
-  let tracks = [...state.tracks], title = names[route.page] || 'Коллекция', entity = null;
-  if (route.page === 'album') { entity = catalog.albums.get(route.key); tracks = entity?.tracks || []; title = entity?.title || 'Альбом не найден'; }
-  if (route.page === 'artist' || route.page === 'artist-albums') { entity = catalog.artists.get(route.key); tracks = entity?.tracks || []; title = entity?.name || 'Исполнитель не найден'; }
+  const names = {overview:tr("Collection"),tracks:tr("All tracks"),favorites:tr("Favorites"),recent:tr("Recently played"),frequent:tr("Frequently played"),added:tr("Recently added")};
+  let tracks = [...state.tracks], title = names[route.page] || tr("Collection"), entity = null;
+  if (route.page === 'album') { entity = catalog.albums.get(route.key); tracks = entity?.tracks || []; title = entity?.title || tr("Album not found"); }
+  if (route.page === 'artist' || route.page === 'artist-albums') { entity = catalog.artists.get(route.key); tracks = entity?.tracks || []; title = entity?.name || tr("Artist not found"); }
   if (route.page === 'favorites') tracks = tracks.filter(t => t.favorite);
   if (route.page === 'recent' || route.page === 'frequent') tracks = tracks.filter(t => t.play_count > 0);
   if (route.page === 'recent') tracks.sort((a,b) => b.last_played - a.last_played);
@@ -70,33 +70,33 @@ function collectionRouteInfo(full = false, override = null) {
   return {...route,title,entity,tracks};
 }
 function albumCard(album) {
-  return `<button class="music-card album-card" data-album="${escapeHTML(album.key)}" title="${escapeHTML(album.title + ' · ' + album.artist)}"><span class="album-art">${coverHTML(album)}</span><strong>${escapeHTML(album.title)}</strong><span>${escapeHTML(album.artist)}</span><small>${escapeHTML(album.year || album.folder || 'Без года')} · треков: ${album.tracks.length}</small></button>`;
+  return `<button class="music-card album-card" data-album="${escapeHTML(album.key)}" title="${escapeHTML(album.title + ' · ' + album.artist)}"><span class="album-art">${coverHTML(album)}</span><strong>${escapeHTML(album.title)}</strong><span>${escapeHTML(album.artist)}</span><small>${escapeHTML(album.year || album.folder || tr("No year"))} · ${escapeHTML(tr("tracks:"))} ${album.tracks.length}</small></button>`;
 }
 function artistCard(artist) {
-  const art = artist.cover_id ? coverHTML(artist) : escapeHTML(Array.from(artist.name)[0]?.toLocaleUpperCase('ru') || '?');
-  return `<button class="music-card artist-card" data-artist="${escapeHTML(artist.key)}"><span class="artist-art">${art}</span><strong>${escapeHTML(artist.name)}</strong><small>Альбомов: ${artist.albumKeys.size} · треков: ${artist.tracks.length}</small></button>`;
+  const art = artist.cover_id ? coverHTML(artist) : escapeHTML(Array.from(artist.name)[0]?.toLocaleUpperCase(MusicI18n.locale) || '?');
+  return `<button class="music-card artist-card" data-artist="${escapeHTML(artist.key)}"><span class="artist-art">${art}</span><strong>${escapeHTML(artist.name)}</strong><small>${escapeHTML(tr("Albums:"))} ${artist.albumKeys.size} · ${escapeHTML(tr("tracks:"))} ${artist.tracks.length}</small></button>`;
 }
 function collectionTrackRows(tracks, {album = false, compact = false, showDiscs = false} = {}) {
   let disc = null;
   return tracks.map((track,index) => {
-    const separator = showDiscs && MusicCatalog.disc(track) !== disc ? `<div class="disc-separator">Диск ${MusicCatalog.disc(track)}</div>` : '';
+    const separator = showDiscs && MusicCatalog.disc(track) !== disc ? `<div class="disc-separator">${escapeHTML(tr("Disc"))} ${MusicCatalog.disc(track)}</div>` : '';
     disc = MusicCatalog.disc(track);
-    return separator + `<div class="collection-track ${track.id === currentId ? 'playing' : ''}"><span class="collection-track-number">${album && track.track_number ? track.track_number : index + 1}</span><div class="mini-cover">${coverHTML(track)}</div><button class="collection-track-title" data-cplay="${escapeHTML(track.id)}"><b>${escapeHTML(track.title)}</b><small>${escapeHTML(track.artist || 'Неизвестный исполнитель')}${!compact && track.album ? ' · ' + escapeHTML(track.album) : ''}</small></button><span class="collection-duration">${clock(track.duration || 0)}</span><button class="icon favorite-button" data-cfavorite="${escapeHTML(track.id)}" aria-label="${track.favorite ? 'Убрать из избранного' : 'В избранное'}" aria-pressed="${!!track.favorite}" ${favoriteBusy.has(track.id) ? 'disabled' : ''}>${track.favorite ? '♥' : '♡'}</button><button class="icon" data-cnext="${escapeHTML(track.id)}" title="Следующим">↳</button><button class="icon" data-cappend="${escapeHTML(track.id)}" title="В конец очереди">＋</button></div>`;
+    return separator + `<div class="collection-track ${track.id === currentId ? 'playing' : ''}"><span class="collection-track-number">${album && track.track_number ? track.track_number : index + 1}</span><div class="mini-cover">${coverHTML(track)}</div><button class="collection-track-title" data-cplay="${escapeHTML(track.id)}"><b>${escapeHTML(track.title)}</b><small>${escapeHTML(track.artist || tr("Unknown artist"))}${!compact && track.album ? ' · ' + escapeHTML(track.album) : ''}</small></button><span class="collection-duration">${clock(track.duration || 0)}</span><button class="icon favorite-button" data-cfavorite="${escapeHTML(track.id)}" aria-label="${escapeHTML(track.favorite ? tr("Remove from favorites") : tr("Add to favorites"))}" aria-pressed="${!!track.favorite}" ${favoriteBusy.has(track.id) ? 'disabled' : ''}>${track.favorite ? '♥' : '♡'}</button><button class="icon" data-cnext="${escapeHTML(track.id)}" title="${escapeHTML(tr("Play next"))}">↳</button><button class="icon" data-cappend="${escapeHTML(track.id)}" title="${escapeHTML(tr("Add to queue"))}">＋</button></div>`;
   }).join('');
 }
 function collectionShelf(title, page, tracks) {
-  return `<section class="collection-shelf"><div class="shelf-heading"><h2>${title}</h2><button class="text-button" data-collection-page="${page}">Все <span class="button-icon" aria-hidden="true">→</span></button></div><div class="collection-track-list" data-shelf="${page}">${tracks.length ? collectionTrackRows(tracks.slice(0,6),{compact:true}) : '<p class="shelf-empty">Пока нет записей</p>'}</div></section>`;
+  return `<section class="collection-shelf"><div class="shelf-heading"><h2>${escapeHTML(title)}</h2><button class="text-button" data-collection-page="${page}">${escapeHTML(tr("All"))} <span class="button-icon" aria-hidden="true">→</span></button></div><div class="collection-track-list" data-shelf="${page}">${tracks.length ? collectionTrackRows(tracks.slice(0,6),{compact:true}) : ('<p class="shelf-empty">' + escapeHTML(tr("No entries yet")) + '</p>')}</div></section>`;
 }
-function emptyCollection(message = 'Добавьте аудиофайлы, чтобы увидеть альбомы и исполнителей.') {
-  return `<div class="empty collection-empty"><div>♫</div><h2>${state.tracks.length ? 'Ничего не найдено' : 'Ваша коллекция начинается здесь'}</h2><p>${escapeHTML(message)}</p>${state.tracks.length ? '' : '<button class="secondary" data-collection-upload>Загрузить музыку</button>'}</div>`;
+function emptyCollection(message = tr("Add audio files to see albums and artists.")) {
+  return `<div class="empty collection-empty"><div>♫</div><h2>${escapeHTML(state.tracks.length ? tr("Nothing found") : tr("Your collection starts here"))}</h2><p>${escapeHTML(message)}</p>${state.tracks.length ? '' : ('<button class="secondary" data-collection-upload>' + escapeHTML(tr("Upload music")) + '</button>')}</div>`;
 }
 function renderCollection() {
   if ($('collectionView').hidden) return;
   const info = collectionRouteInfo(), query = $('collectionSearch').value.trim();
-  $('collectionSearch').placeholder = info.page === 'albums' || info.page === 'artist-albums' ? 'Альбом, исполнитель, год…' : info.page === 'artists' ? 'Имя исполнителя…' : 'Название, исполнитель, альбом…';
+  $('collectionSearch').placeholder = info.page === 'albums' || info.page === 'artist-albums' ? tr("Album, artist, year…") : info.page === 'artists' ? tr("Artist name…") : tr("Title, artist, album…");
   $('collectionContent').setAttribute('aria-label',info.title);
   const protectedAlbums = state.tracks.filter(t => !t.album && t.metadata_overrides?.includes('album')).length;
-  $('collectionIndexStatus').textContent = $('indexStatus').textContent + (protectedAlbums ? ` · У ${protectedAlbums} треков поле альбома защищено. Применить теги можно через «Вернуть данные из тегов» в таблице.` : '');
+  $('collectionIndexStatus').textContent = $('indexStatus').textContent + (protectedAlbums ? ` · ${tr("For")} ${protectedAlbums} ${tr("tracks have a protected album field. Use “Restore from tags” in the table to apply file tags.")}` : '');
   document.querySelectorAll('.collection-tab').forEach(button => {
     button.classList.toggle('active',button.dataset.collectionPage === ({album:'albums',artist:'artists','artist-albums':'artists'}[info.page] || info.page));
     button.setAttribute('aria-pressed',String(button.dataset.collectionPage === ({album:'albums',artist:'artists','artist-albums':'artists'}[info.page] || info.page)));
@@ -107,43 +107,43 @@ function renderCollection() {
     if (!state.tracks.length) html = emptyCollection();
     else if (query) {
       const albums = catalog.albumList(query), artists = catalog.artistList(query);
-      html = `<div class="shelf-heading"><h2>Результаты поиска</h2><button class="text-button" data-collection-page="tracks">Все найденные треки <span class="button-icon" aria-hidden="true">→</span></button></div>`;
-      if (albums.length) html += `<section class="collection-shelf"><h2>Альбомы</h2><div class="music-grid">${albums.slice(0,8).map(albumCard).join('')}</div></section>`;
-      if (artists.length) html += `<section class="collection-shelf"><h2>Исполнители</h2><div class="music-grid">${artists.slice(0,8).map(artistCard).join('')}</div></section>`;
+      html = `<div class="shelf-heading"><h2>${escapeHTML(tr("Search results"))}</h2><button class="text-button" data-collection-page="tracks">${escapeHTML(tr("All matching tracks"))} <span class="button-icon" aria-hidden="true">→</span></button></div>`;
+      if (albums.length) html += `<section class="collection-shelf"><h2>${escapeHTML(tr("Albums"))}</h2><div class="music-grid">${albums.slice(0,8).map(albumCard).join('')}</div></section>`;
+      if (artists.length) html += `<section class="collection-shelf"><h2>${escapeHTML(tr("Artists"))}</h2><div class="music-grid">${artists.slice(0,8).map(artistCard).join('')}</div></section>`;
       html += info.tracks.length ? `<div class="collection-track-list">${collectionTrackRows(info.tracks.slice(0,12))}</div>` : '';
-      if (!albums.length && !artists.length && !info.tracks.length) html += emptyCollection('Попробуйте другое название, исполнителя или альбом.');
+      if (!albums.length && !artists.length && !info.tracks.length) html += emptyCollection(tr("Try another title, artist, or album."));
     } else {
       const added = catalog.albumList().sort((a,b) => b.added - a.added || MusicCatalog.compare(a.title,b.title));
       const recent = state.tracks.filter(t => t.play_count > 0).sort((a,b) => b.last_played - a.last_played);
       const frequent = state.tracks.filter(t => t.play_count > 0).sort((a,b) => b.play_count - a.play_count || b.last_played - a.last_played);
       const favorites = state.tracks.filter(t => t.favorite);
-      html = `<section class="collection-shelf"><div class="shelf-heading"><h2>Недавно добавленные альбомы</h2><button class="text-button" data-collection-page="albums">Все альбомы <span class="button-icon" aria-hidden="true">→</span></button></div><div class="music-grid">${added.slice(0,8).map(albumCard).join('')}</div></section>`;
-      html += `<div class="collection-columns">${collectionShelf('Недавно прослушанное','recent',recent)}${collectionShelf('Избранное','favorites',favorites)}</div>`;
-      html += collectionShelf('Часто включаемое','frequent',frequent);
-      html += `<div class="collection-bottom-links"><button class="secondary" data-collection-page="tracks">Все треки</button><button class="secondary" data-collection-page="added">Недавно добавленные треки</button><button class="text-button" data-collection-history>Полная история прослушивания <span class="button-icon" aria-hidden="true">→</span></button></div>`;
+      html = `<section class="collection-shelf"><div class="shelf-heading"><h2>${escapeHTML(tr("Recently added albums"))}</h2><button class="text-button" data-collection-page="albums">${escapeHTML(tr("All albums"))} <span class="button-icon" aria-hidden="true">→</span></button></div><div class="music-grid">${added.slice(0,8).map(albumCard).join('')}</div></section>`;
+      html += `<div class="collection-columns">${collectionShelf(tr("Recently played"),'recent',recent)}${collectionShelf(tr("Favorites"),'favorites',favorites)}</div>`;
+      html += collectionShelf(tr("Frequently played"),'frequent',frequent);
+      html += `<div class="collection-bottom-links"><button class="secondary" data-collection-page="tracks">${escapeHTML(tr("All tracks"))}</button><button class="secondary" data-collection-page="added">${escapeHTML(tr("Recently added tracks"))}</button><button class="text-button" data-collection-history>${escapeHTML(tr("Full listening history"))} <span class="button-icon" aria-hidden="true">→</span></button></div>`;
     }
   } else if (info.page === 'albums' || info.page === 'artists' || info.page === 'artist-albums') {
     const albumsPage = info.page !== 'artists';
     const items = info.page === 'artist-albums' ? catalog.artistAlbums(info.key).filter(a => !query || a.searchText.includes(MusicCatalog.normalize(query))) : albumsPage ? catalog.albumList(query) : catalog.artistList(query);
-    html = (info.page === 'artist-albums' ? `<button class="text-button" data-artist="${escapeHTML(info.key)}"><span class="button-icon" aria-hidden="true">←</span> К исполнителю</button>` : '') + `<div class="shelf-heading"><h2>${info.page === 'artist-albums' ? 'Альбомы: ' + escapeHTML(info.title) : albumsPage ? 'Альбомы' : 'Исполнители'}</h2><span class="muted">Найдено: ${items.length}</span></div><div class="music-grid">${items.slice(0,collectionLimit).map(albumsPage ? albumCard : artistCard).join('')}</div>`;
+    html = (info.page === 'artist-albums' ? `<button class="text-button" data-artist="${escapeHTML(info.key)}"><span class="button-icon" aria-hidden="true">←</span> ${escapeHTML(tr("Back to artist"))}</button>` : '') + `<div class="shelf-heading"><h2>${info.page === 'artist-albums' ? (tr("Albums:") + " ") + escapeHTML(info.title) : albumsPage ? tr("Albums") : tr("Artists")}</h2><span class="muted">${escapeHTML(tr("Found:"))} ${items.length}</span></div><div class="music-grid">${items.slice(0,collectionLimit).map(albumsPage ? albumCard : artistCard).join('')}</div>`;
     if (!items.length) html += emptyCollection();
     $('collectionMore').hidden = items.length <= collectionLimit;
   } else {
     if ((info.page === 'album' || info.page === 'artist') && !info.entity) {
-      html = `<button class="text-button" data-collection-page="${info.page === 'album' ? 'albums' : 'artists'}"><span class="button-icon" aria-hidden="true">←</span> Назад</button>` + emptyCollection('Данные могли измениться после сканирования. Откройте список заново.');
+      html = `<button class="text-button" data-collection-page="${info.page === 'album' ? 'albums' : 'artists'}"><span class="button-icon" aria-hidden="true">←</span> ${escapeHTML(tr("Back"))}</button>` + emptyCollection(tr("Data may have changed since scanning. Reopen the list."));
     } else {
       if (info.page === 'album' || info.page === 'artist') {
         const entity = info.entity, album = info.page === 'album';
-        const art = entity.cover_id ? coverHTML(entity) : album ? '♫' : escapeHTML(Array.from(entity.name)[0]?.toLocaleUpperCase('ru') || '?');
-        const description = album ? [entity.artist,entity.year,`треков: ${entity.tracks.length}`,clock(entity.duration),entity.discs > 1 ? `дисков: ${entity.discs}` : ''].filter(Boolean).join(' · ') : `Альбомов: ${entity.albumKeys.size} · треков: ${entity.tracks.length}`;
-        html = `<button class="text-button" data-collection-page="${album ? 'albums' : 'artists'}"><span class="button-icon" aria-hidden="true">←</span> ${album ? 'К альбомам' : 'К исполнителям'}</button><div class="release-detail"><div class="release-art ${album ? '' : 'round'}">${art}</div><div class="release-info"><div class="eyebrow">${album ? 'АЛЬБОМ' : 'ИСПОЛНИТЕЛЬ'}</div><h2>${escapeHTML(info.title)}</h2><p>${escapeHTML(description)}</p>${album ? `<button class="text-button release-artist-link" data-artist="${escapeHTML(MusicCatalog.normalize(entity.artistName))}">${escapeHTML(entity.artist)}</button>` : ''}<div class="release-actions"><button class="primary" data-collection-play-all><span class="button-icon" aria-hidden="true">▶</span> ${album ? 'Слушать альбом' : 'Слушать исполнителя'}</button><button class="secondary" data-collection-append-all><span class="button-icon" aria-hidden="true">＋</span> В очередь</button><button class="text-button" data-collection-table>Открыть в таблице <span class="button-icon" aria-hidden="true">→</span></button></div></div></div>`;
+        const art = entity.cover_id ? coverHTML(entity) : album ? '♫' : escapeHTML(Array.from(entity.name)[0]?.toLocaleUpperCase(MusicI18n.locale) || '?');
+        const description = album ? [entity.artist,entity.year,`${tr("tracks:")} ${entity.tracks.length}`,clock(entity.duration),entity.discs > 1 ? `${tr("discs:")} ${entity.discs}` : ''].filter(Boolean).join(' · ') : `${tr("Albums:")} ${entity.albumKeys.size} · ${tr("tracks:")} ${entity.tracks.length}`;
+        html = `<button class="text-button" data-collection-page="${album ? 'albums' : 'artists'}"><span class="button-icon" aria-hidden="true">←</span> ${escapeHTML(album ? tr("Back to albums") : tr("Back to artists"))}</button><div class="release-detail"><div class="release-art ${album ? '' : 'round'}">${art}</div><div class="release-info"><div class="eyebrow">${escapeHTML(album ? tr("ALBUM") : tr("ARTIST"))}</div><h2>${escapeHTML(info.title)}</h2><p>${escapeHTML(description)}</p>${album ? `<button class="text-button release-artist-link" data-artist="${escapeHTML(MusicCatalog.normalize(entity.artistName))}">${escapeHTML(entity.artist)}</button>` : ''}<div class="release-actions"><button class="primary" data-collection-play-all><span class="button-icon" aria-hidden="true">▶</span> ${escapeHTML(album ? tr("Play album") : tr("Play artist"))}</button><button class="secondary" data-collection-append-all><span class="button-icon" aria-hidden="true">＋</span> ${escapeHTML(tr("Queue"))}</button><button class="text-button" data-collection-table>${escapeHTML(tr("Open in table"))} <span class="button-icon" aria-hidden="true">→</span></button></div></div></div>`;
         if (!album) {
           const albums = catalog.artistAlbums(entity.key);
-          html += `<section class="collection-shelf"><h2>Альбомы</h2><div class="music-grid">${albums.slice(0,12).map(albumCard).join('')}</div>${albums.length > 12 ? '<button class="text-button" data-collection-artist-albums>Показать все альбомы исполнителя <span class="button-icon" aria-hidden="true">→</span></button>' : ''}</section>`;
+          html += `<section class="collection-shelf"><h2>${escapeHTML(tr("Albums"))}</h2><div class="music-grid">${albums.slice(0,12).map(albumCard).join('')}</div>${albums.length > 12 ? ('<button class="text-button" data-collection-artist-albums>' + escapeHTML(tr("Show all artist albums")) + " " + '<span class="button-icon" aria-hidden="true">→</span></button>') : ''}</section>`;
         }
-      } else html = `<div class="shelf-heading"><h2>${escapeHTML(info.title)}</h2><span class="muted">Треков: ${info.tracks.length}</span></div><div class="release-actions"><button class="primary" data-collection-play-all ${info.tracks.length ? '' : 'disabled'}><span class="button-icon" aria-hidden="true">▶</span> Слушать всё</button><button class="secondary" data-collection-append-all ${info.tracks.length ? '' : 'disabled'}><span class="button-icon" aria-hidden="true">＋</span> В очередь</button></div>`;
+      } else html = `<div class="shelf-heading"><h2>${escapeHTML(info.title)}</h2><span class="muted">${escapeHTML(tr("Tracks:"))} ${info.tracks.length}</span></div><div class="release-actions"><button class="primary" data-collection-play-all ${info.tracks.length ? '' : 'disabled'}><span class="button-icon" aria-hidden="true">▶</span> ${escapeHTML(tr("Play all"))}</button><button class="secondary" data-collection-append-all ${info.tracks.length ? '' : 'disabled'}><span class="button-icon" aria-hidden="true">＋</span> ${escapeHTML(tr("Queue"))}</button></div>`;
       const multipleDiscs = info.page === 'album' && info.entity.discs > 1;
-      html += info.tracks.length ? `<div class="collection-track-list">${collectionTrackRows(info.tracks.slice(0,collectionLimit),{album:info.page === 'album',showDiscs:multipleDiscs})}</div>` : emptyCollection('В этом разделе пока нет треков или они не соответствуют поиску.');
+      html += info.tracks.length ? `<div class="collection-track-list">${collectionTrackRows(info.tracks.slice(0,collectionLimit),{album:info.page === 'album',showDiscs:multipleDiscs})}</div>` : emptyCollection(tr("No tracks here yet, or none match your search."));
       $('collectionMore').hidden = info.tracks.length <= collectionLimit;
     }
   }

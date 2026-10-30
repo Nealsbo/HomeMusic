@@ -14,14 +14,14 @@ async function diagnosePlayback(id, code = 4, generation = playbackGeneration) {
     const response = await fetch('/media/' + id, {method:'HEAD'});
     if (!response.ok) {
       const result = await response.json().catch(() => ({}));
-      message = `HTTP ${response.status}: ${result.error || 'Файл недоступен на сервере'}`;
+      message = `HTTP ${response.status}: ${result.error ? MusicI18n.message(result.error) : tr("File is unavailable on the server")}`;
     } else {
       const info = await api('media-info/' + id);
-      const reasons = {1:'Воспроизведение прервано',2:'Ошибка сети при передаче аудио',3:'Ошибка декодирования аудио',4:'Браузер не поддерживает содержимое этого файла'};
+      const reasons = {1:tr("Playback interrupted"),2:tr("Network error while streaming audio"),3:tr("Audio decoding error"),4:tr("This browser does not support the contents of this file")};
       message = `${reasons[code] || reasons[4]}. ${info.path} · ${info.mime} · ${info.container} · ${bytes(info.size)}. ` +
-        (info.size === 0 ? 'Файл пуст.' : 'Проверьте файл во внешнем плеере. Расширение не гарантирует поддержку кодека браузером.');
+        (info.size === 0 ? tr("File is empty.") : tr("Check the file in an external player. The extension does not guarantee browser codec support."));
     }
-  } catch (error) { message = 'Не удалось проверить доступность файла: ' + error.message; }
+  } catch (error) { message = (tr("Could not check file availability:") + " ") + error.message; }
   if (id !== currentId || generation !== playbackGeneration) return;
   playbackState = 'error'; playbackError = message;
   $('playbackError').textContent = message; $('playbackError').hidden = false;
@@ -40,27 +40,27 @@ function coverHTML(track) {
 }
 function updateNowPlaying() {
   const t = trackMap.get(currentId);
-  $('nowTitle').textContent = t?.title || 'Выберите музыку';
-  $('nowArtist').textContent = t ? t.artist || 'Неизвестный исполнитель' : 'Ваша коллекция ждёт';
+  $('nowTitle').textContent = t?.title || tr("Choose music");
+  $('nowArtist').textContent = t ? t.artist || tr("Unknown artist") : tr("Your collection is waiting");
   $('nowCover').innerHTML = coverHTML(t);
   $('favoriteCurrent').disabled = !t || favoriteBusy.has(currentId);
   $('favoriteCurrent').textContent = t?.favorite ? '♥' : '♡';
   $('favoriteCurrent').classList.toggle('enabled',!!t?.favorite);
   $('favoriteCurrent').setAttribute('aria-pressed',String(!!t?.favorite));
-  $('favoriteCurrent').title = t?.favorite ? 'Убрать из избранного' : 'В избранное';
+  $('favoriteCurrent').title = t?.favorite ? tr("Remove from favorites") : tr("Add to favorites");
   $('favoriteCurrent').setAttribute('aria-label',$('favoriteCurrent').title);
   if (t && 'mediaSession' in navigator && 'MediaMetadata' in window) navigator.mediaSession.metadata = new MediaMetadata({title:t.title,artist:t.artist,album:t.album,
     artwork:t.cover_id ? [{src:location.origin + '/covers/' + t.cover_id + '.jpg',type:'image/jpeg'}] : []});
 }
 function renderQueue() {
   const ordered = queueModel.ordered;
-  $('queueCount').textContent = `${ordered.length} треков · ${queueName}`;
+  $('queueCount').textContent = tr('{count} tracks · {name}', {count:ordered.length,name:queueName});
   $('queueList').innerHTML = ordered.slice(0,queueLimit).map((entry,i) => {
     const t = trackMap.get(entry.trackId);
     return t ? `<div class="queue-row ${entry.id === queueModel.currentEntryId ? 'active' : ''}" draggable="true" data-entry="${entry.id}">
-      <button class="queue-item" data-queue="${entry.id}">${i + 1}. ${escapeHTML(t.title)}<small>${escapeHTML(t.artist || 'Неизвестный исполнитель')}</small></button>
-      <div class="queue-actions"><button class="icon" data-queue-up="${entry.id}" title="Выше" ${i === 0 ? 'disabled' : ''}>↑</button><button class="icon" data-queue-down="${entry.id}" title="Ниже" ${i === ordered.length - 1 ? 'disabled' : ''}>↓</button><button class="icon" data-queue-remove="${entry.id}" title="Убрать из очереди">×</button></div></div>` : '';
-  }).join('') || '<p class="muted">Выберите трек или добавьте музыку в очередь.</p>';
+      <button class="queue-item" data-queue="${entry.id}">${i + 1}. ${escapeHTML(t.title)}<small>${escapeHTML(t.artist || tr("Unknown artist"))}</small></button>
+      <div class="queue-actions"><button class="icon" data-queue-up="${entry.id}" title="${escapeHTML(tr("Move up"))}" ${i === 0 ? 'disabled' : ''}>↑</button><button class="icon" data-queue-down="${entry.id}" title="${escapeHTML(tr("Move down"))}" ${i === ordered.length - 1 ? 'disabled' : ''}>↓</button><button class="icon" data-queue-remove="${entry.id}" title="${escapeHTML(tr("Remove from queue"))}">×</button></div></div>` : '';
+  }).join('') || ('<p class="muted">' + tr("Choose a track or add music to the queue.") + '</p>');
   $('queueMore').hidden = ordered.length <= queueLimit;
   $('clearQueue').disabled = !ordered.length;
   $('saveQueue').disabled = !ordered.length;
@@ -89,7 +89,7 @@ async function loadCurrent(autoplay = true, resumePosition = 0) {
   if (!autoplay) return;
   try { await audio.play(); } catch(e) {
     if (generation !== playbackGeneration) return;
-    if (e.name === 'NotAllowedError') { playbackState = 'paused'; toast('Браузер ожидает нажатия ▶ для начала воспроизведения.'); reportPlayback(); }
+    if (e.name === 'NotAllowedError') { playbackState = 'paused'; toast(tr("Press ▶ to start playback in this browser.")); reportPlayback(); }
     else if (e.name !== 'AbortError') await diagnosePlayback(id, audio.error?.code || 4, generation);
   }
 }
@@ -100,7 +100,7 @@ async function playTrack(id, newQueue, resumePosition = 0, contextName = null) {
     const valid = newQueue.filter(t => trackMap.has(t));
     queueModel.replace(valid, Math.max(0,valid.indexOf(id)));
     queuePlaylistId = playlistId;
-    queueName = contextName || state.playlists.find(p => p.id === playlistId)?.name || (view === 'history' ? 'История' : {favorites:'Избранное',recent:'Недавно прослушанное',frequent:'Часто включаемое',added:'Недавно добавленное'}[$('libraryList').value]) || ($('folderFilter').value === '*' || !$('folderFilter').value ? 'Медиатека' : $('folderFilter').value);
+    queueName = contextName || state.playlists.find(p => p.id === playlistId)?.name || (view === 'history' ? tr("History") : {favorites:tr("Favorites"),recent:tr("Recently played"),frequent:tr("Frequently played"),added:tr("Recently added")}[$('libraryList').value]) || ($('folderFilter').value === '*' || !$('folderFilter').value ? tr("Library") : $('folderFilter').value);
   } else {
     const entry = queueModel.ordered.find(e => e.trackId === id);
     if (entry) queueModel.select(entry.id);
@@ -113,12 +113,12 @@ async function step(direction, ended = false) {
   if (direction < 0 && audio.currentTime > 3) { audio.currentTime = 0; return; }
   queueModel.setShuffle(shuffled);
   const entry = direction < 0 ? queueModel.previous() : queueModel.next(repeating);
-  if (!entry) { if (!ended && direction > 0) toast('Конец очереди'); return; }
+  if (!entry) { if (!ended && direction > 0) toast(tr("End of queue")); return; }
   return loadCurrent();
 }
 function enqueue(ids, next = false) {
   queueModel.add(ids.filter(id => trackMap.has(id)),next);
-  queueChanged(); toast(next ? 'Добавлено следующим' : 'Добавлено в конец очереди');
+  queueChanged(); toast(next ? tr("Added to play next") : tr("Added to the end of the queue"));
 }
 async function removeQueueEntry(id) {
   const wasPlaying = !audio.paused;
@@ -132,7 +132,7 @@ async function removeQueueEntry(id) {
 function playVisibleMusic() {
   const context = !$('collectionView').hidden ? collectionRouteInfo() : null;
   const tracks = context ? context.tracks : visible;
-  return tracks.length ? playTrack(tracks[0].id,tracks.map(t => t.id),0,context?.title || null) : toast('Добавьте музыку в коллекцию');
+  return tracks.length ? playTrack(tracks[0].id,tracks.map(t => t.id),0,context?.title || null) : toast(tr("Add music to your collection"));
 }
 $('playAll').onclick = handle(() => playVisibleMusic());
 $('togglePlay').onclick = handle(async () => {
@@ -159,10 +159,10 @@ $('queueList').ondragend = () => { queueDragId = null; };
 $('queueMore').onclick = () => { queueLimit += 150; renderQueue(); };
 $('clearQueue').onclick = () => { queueModel.clear(); stopPlayback(); };
 $('saveQueue').onclick = handle(async () => {
-  const name = prompt('Название плейлиста для текущей очереди'); if (!name?.trim()) return;
+  const name = prompt(tr("Playlist name for the current queue")); if (!name?.trim()) return;
   const p = await api('playlist',{name});
   await api('playlistTracks',{id:p.id,tracks:[...new Set(queue)]});
-  await refresh(); toast('Очередь сохранена в плейлист. Повторяющиеся треки включены один раз.');
+  await refresh(); toast(tr("Queue saved as a playlist. Repeated tracks were included once."));
 });
 $('seek').oninput = () => { if (Number.isFinite(audio.duration)) { sampleListening(false); audio.currentTime = Number($('seek').value) / 100 * audio.duration; sampleListening(!audio.paused,true); } };
 $('volume').oninput = () => { audio.volume = Number($('volume').value); $('volumeValue').textContent = Math.round(audio.volume * 100) + '%'; store('volume',audio.volume); };

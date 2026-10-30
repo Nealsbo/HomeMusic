@@ -8,11 +8,11 @@ let toastTimer;
 let editingTrackSnapshot = null;
 const queueModel = new MusicQueue();
 let queueLimit = 150, queueDragId = null, playbackGeneration = 0;
-let queuePlaylistId = null, queueName = 'Медиатека', playbackState = 'idle', playbackError = '';
+let queuePlaylistId = null, queueName = tr("Library"), playbackState = 'idle', playbackError = '';
 const clientId = globalThis.crypto?.randomUUID?.() || ('web-' + Date.now().toString(36) + Math.random().toString(36).slice(2));
 let reportSeq = 0, reportedQueue = null;
 const escapeHTML = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const bytes = n => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' ГБ' : n >= 1048576 ? (n / 1048576).toFixed(1) + ' МБ' : (n / 1024).toFixed(0) + ' КБ';
+const bytes = n => n >= 1073741824 ? (n / 1073741824).toFixed(1) + (' ' + tr("GB")) : n >= 1048576 ? (n / 1048576).toFixed(1) + (' ' + tr("MB")) : (n / 1024).toFixed(0) + (' ' + tr("KB"));
 const clock = s => Number.isFinite(s) ? Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0') : '0:00';
 const folderOf = t => t.path.includes('/') ? t.path.slice(0, t.path.lastIndexOf('/')) : '';
 function stored(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
@@ -21,7 +21,7 @@ function toast(message) { $('toast').textContent = message; $('toast').hidden = 
 async function api(action, data) {
   const response = await fetch('/api/' + action, data === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
   const result = await response.json();
-  if (!response.ok) { const error = Error(result.error || 'Ошибка сервера'); error.status = response.status; throw error; }
+  if (!response.ok) { const error = Error(MusicI18n.message(result.error || 'Server error')); error.status = response.status; throw error; }
   if (result.operationId && typeof rememberOperation === 'function') rememberOperation(result.operationId);
   return result;
 }
@@ -36,7 +36,7 @@ const savedDevice = stored('device',{});
 const deviceId = /^[A-Za-z0-9_-]{1,80}$/.test(savedDevice.id || '') ? savedDevice.id :
   (globalThis.crypto?.randomUUID?.() || 'device-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2));
 let deviceName = typeof savedDevice.name === 'string' && savedDevice.name.trim() ? savedDevice.name.slice(0,80) :
-  'Браузер · ' + (navigator.platform || 'устройство');
+  (tr("Browser ·") + " ") + (navigator.platform || tr("device"));
 store('device',{id:deviceId,name:deviceName});
 let historyItems = [], historyCursor = null, historyRequest = 0, historyTotal = 0;
 const favoriteBusy = new Set();

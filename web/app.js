@@ -6,12 +6,12 @@ $('chooseFiles').ondragover = e => { e.preventDefault(); };
 $('chooseFiles').ondrop = handle(e => { e.preventDefault(); return upload([...e.dataTransfer.files]); });
 document.querySelectorAll('.nav').forEach(el => el.onclick = () => showView(el.dataset.view));
 $('playlists').onclick = e => { const b = e.target.closest('[data-playlist]'); if (b) { $('search').value = ''; $('folderFilter').value = '*'; $('sort').value = 'manual'; showView('library', b.dataset.playlist); } };
-$('newPlaylist').onclick = handle(async () => { const name = prompt('Название нового плейлиста'); if (!name?.trim()) return; const p = await api('playlist',{name}); await refresh(); showView('library',p.id); });
-$('renamePlaylist').onclick = handle(async () => { const name = prompt('Название плейлиста',state.playlists.find(p => p.id === playlistId).name); if (!name?.trim()) return; await api('playlist',{id:playlistId,name}); await refresh(); });
-$('deletePlaylist').onclick = handle(async () => { if (!confirm('Удалить плейлист? Аудиофайлы сохранятся.')) return; await api('deletePlaylist',{id:playlistId}); playlistId = null; await refresh(); });
+$('newPlaylist').onclick = handle(async () => { const name = prompt(tr("New playlist name")); if (!name?.trim()) return; const p = await api('playlist',{name}); await refresh(); showView('library',p.id); });
+$('renamePlaylist').onclick = handle(async () => { const name = prompt(tr("Playlist name"),state.playlists.find(p => p.id === playlistId).name); if (!name?.trim()) return; await api('playlist',{id:playlistId,name}); await refresh(); });
+$('deletePlaylist').onclick = handle(async () => { if (!confirm(tr("Delete this playlist? Audio files will be kept."))) return; await api('deletePlaylist',{id:playlistId}); playlistId = null; await refresh(); });
 $('importButton').onclick = () => $('m3uInput').click();
-$('m3uInput').onchange = handle(async e => { const file = e.target.files[0]; if (!file) return; if (file.size > 1048576) throw Error('Максимальный размер M3U: 1 МБ'); const result = await api('import',{name:file.name.replace(/\.m3u8?$/i,''), content:await file.text()}); await refresh(); showView('library',result.id); toast(`Добавлено: ${result.matched}. Не найдено или неоднозначно: ${result.missing.length}.`); if (result.missing.length) { $('queueList').innerHTML = '<p class="muted">Эти записи не найдены в хранилище. Загрузите соответствующие аудиофайлы и повторите импорт.</p>' + result.missing.map(line => `<p>${escapeHTML(line)}</p>`).join(''); $('queueDialog').showModal(); } e.target.value = ''; });
-$('exportButton').onclick = async () => { try { const response = await fetch('/api/export/' + playlistId); if (!response.ok) throw Error('Не удалось экспортировать'); const url = URL.createObjectURL(await response.blob()); const a = document.createElement('a'); a.href = url; a.download = state.playlists.find(p => p.id === playlistId).name + '.m3u8'; a.click(); setTimeout(() => URL.revokeObjectURL(url),1000); } catch(e) { toast(e.message); } };
+$('m3uInput').onchange = handle(async e => { const file = e.target.files[0]; if (!file) return; if (file.size > 1048576) throw Error(tr("Maximum M3U size: 1 MB")); const result = await api('import',{name:file.name.replace(/\.m3u8?$/i,''), content:await file.text()}); await refresh(); showView('library',result.id); toast(tr('Added: {count}. Not found or ambiguous: {missing}.', {count:result.matched,missing:result.missing.length})); if (result.missing.length) { $('queueList').innerHTML = ('<p class="muted">' + escapeHTML(tr("These entries were not found in storage. Upload the corresponding audio files and import again.")) + '</p>') + result.missing.map(line => `<p>${escapeHTML(line)}</p>`).join(''); $('queueDialog').showModal(); } e.target.value = ''; });
+$('exportButton').onclick = async () => { try { const response = await fetch('/api/export/' + playlistId); if (!response.ok) throw Error(tr("Could not export")); const url = URL.createObjectURL(await response.blob()); const a = document.createElement('a'); a.href = url; a.download = state.playlists.find(p => p.id === playlistId).name + '.m3u8'; a.click(); setTimeout(() => URL.revokeObjectURL(url),1000); } catch(e) { toast(e.message); } };
 $('libraryList').onchange = () => { selected.clear(); limit = 150; view = $('libraryList').value === 'favorites' ? 'favorites' : 'library'; renderNav(); renderTracks(); };
 $('search').oninput = () => { limit = 150; renderTracks(); };
 $('sort').onchange = () => { limit = 150; renderTracks(); };
@@ -27,19 +27,19 @@ $('tracks').onclick = handle(async e => {
   if (b.dataset.play) return playTrack(b.dataset.play,visible.map(t => t.id));
   const id = b.dataset.up || b.dataset.down;
   if (id) { const i = visible.findIndex(t => t.id === id), target = visible[i + (b.dataset.up ? -1 : 1)]; if (target) await reorder(id,target.id); }
-  if (b.dataset.edit) { const t = trackMap.get(b.dataset.edit); editingTrackSnapshot = {...t}; $('editProvenance').textContent = t.metadata_overrides?.length ? 'Защищённые поля: ' + t.metadata_overrides.join(', ') + '. Можно вернуть значения из тегов.' : 'Данные прочитаны из файла; ручные правки будут защищены при сканировании.'; for (const [key,value] of Object.entries({editId:t.id,editTitle:t.title,editArtist:t.artist,editAlbum:t.album,editAlbumArtist:t.album_artist || '',editGenre:t.genre || '',editYear:t.year || '',editTrackNumber:t.track_number || 0,editDiscNumber:t.disc_number || 0})) $(key).value = value; $('editTechnical').textContent = `${clock(t.duration || 0)} · ${t.codec || 'формат не определён'} · ${Math.round((t.bitrate || 0) / 1000)} кбит/с · ${t.sample_rate || 0} Гц` + (t.metadata_error ? ' · ' + t.metadata_error : ''); $('editDialog').showModal(); }
+  if (b.dataset.edit) { const t = trackMap.get(b.dataset.edit); editingTrackSnapshot = {...t}; $('editProvenance').textContent = t.metadata_overrides?.length ? (tr("Protected fields:") + " ") + t.metadata_overrides.join(', ') + ('. ' + tr("You can restore values from tags.")) : tr("Data was read from the file; manual edits will be preserved during scans."); for (const [key,value] of Object.entries({editId:t.id,editTitle:t.title,editArtist:t.artist,editAlbum:t.album,editAlbumArtist:t.album_artist || '',editGenre:t.genre || '',editYear:t.year || '',editTrackNumber:t.track_number || 0,editDiscNumber:t.disc_number || 0})) $(key).value = value; $('editTechnical').textContent = `${clock(t.duration || 0)} · ${t.codec || tr("unknown format")} · ${Math.round((t.bitrate || 0) / 1000)} ${tr("kbps ·")} ${t.sample_rate || 0} ${tr("Hz")}` + (t.metadata_error ? ' · ' + MusicI18n.message(t.metadata_error) : ''); $('editDialog').showModal(); }
 });
 $('tracks').ondragstart = e => { const row = e.target.closest('tr'); if (!row || !canReorderTracks() || e.target.closest('input,button')) { e.preventDefault(); return; } dragId = row.dataset.id; e.dataTransfer.setData('text/plain',dragId); e.dataTransfer.effectAllowed = 'move'; row.classList.add('dragging'); };
 $('tracks').ondragover = e => { const row = e.target.closest('tr'); if (row && dragId) { e.preventDefault(); document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target')); row.classList.add('drop-target'); } };
 $('tracks').ondrop = handle(async e => { e.preventDefault(); const row = e.target.closest('tr'); if (row && dragId) await reorder(dragId,row.dataset.id); dragId = null; });
 $('tracks').ondragend = () => { dragId = null; document.querySelectorAll('.dragging,.drop-target').forEach(el => el.classList.remove('dragging','drop-target')); };
-$('moveButton').onclick = handle(async () => { await api('move',{tracks:[...selected],folder:$('moveFolder').value}); selected.clear(); await refresh(); toast('Файлы перемещены'); });
-$('addButton').onclick = handle(async () => { const p = state.playlists.find(p => p.id === $('addPlaylist').value); if (!p) return; await api('playlistTracks',{id:p.id,tracks:[...new Set([...p.tracks,...selected])]}); selected.clear(); await refresh(); toast('Добавлено в плейлист'); });
+$('moveButton').onclick = handle(async () => { await api('move',{tracks:[...selected],folder:$('moveFolder').value}); selected.clear(); await refresh(); toast(tr("Files moved")); });
+$('addButton').onclick = handle(async () => { const p = state.playlists.find(p => p.id === $('addPlaylist').value); if (!p) return; await api('playlistTracks',{id:p.id,tracks:[...new Set([...p.tracks,...selected])]}); selected.clear(); await refresh(); toast(tr("Added to playlist")); });
 $('removeButton').onclick = handle(async () => { const p = state.playlists.find(p => p.id === playlistId); await api('playlistTracks',{id:p.id,tracks:p.tracks.filter(id => !selected.has(id))}); selected.clear(); await refresh(); });
-$('newFolder').onclick = handle(async () => { const path = prompt('Путь новой папки, например Jazz/Live'); if (!path?.trim()) return; await api('folder',{path:path.trim()}); await refresh(); });
+$('newFolder').onclick = handle(async () => { const path = prompt(tr("New folder path, for example Jazz/Live")); if (!path?.trim()) return; await api('folder',{path:path.trim()}); await refresh(); });
 $('folderGrid').onclick = e => { const b = e.target.closest('[data-folder-index]'); if (b) { setHomeMode('table',false); $('folderFilter').value = state.folders[Number(b.dataset.folderIndex)]; $('search').value = ''; showView('library'); } };
-$('scanButton').onclick = handle(async () => { $('scanButton').disabled = true; try { await api('scan',{}); await refresh(); toast('Медиатека обновлена'); } finally { $('scanButton').disabled = false; } });
-$('refresh').onclick = handle(async () => { if (view === 'operations') { await loadOperations(); toast('Журнал обновлён'); return; } if (view === 'health') { await loadHealth(); toast('Отчёт обновлён'); return; } await api('scan', {}); await refresh(); if (view === 'stats') await updateStats(); if (view === 'history') await loadHistory(true); toast('Данные обновлены'); });
+$('scanButton').onclick = handle(async () => { $('scanButton').disabled = true; try { await api('scan',{}); await refresh(); toast(tr("Library updated")); } finally { $('scanButton').disabled = false; } });
+$('refresh').onclick = handle(async () => { if (view === 'operations') { await loadOperations(); toast(tr("Operation log updated")); return; } if (view === 'health') { await loadHealth(); toast(tr("Report updated")); return; } await api('scan', {}); await refresh(); if (view === 'stats') await updateStats(); if (view === 'history') await loadHistory(true); toast(tr("Data updated")); });
 $('editForm').onsubmit = handle(async e => {
   e.preventDefault();
   const data = {id:$('editId').value};
@@ -52,7 +52,7 @@ $('editForm').onsubmit = handle(async e => {
   await api('metadata',data); $('editDialog').close(); await refresh();
 });
 $('resetMetadata').onclick = handle(async () => {
-  if (!confirm('Вернуть все поля из тегов файла? Ручные значения будут заменены.')) return;
+  if (!confirm(tr("Restore all fields from file tags? Manual values will be replaced."))) return;
   await api('metadata',{id:$('editId').value,reset:true}); $('editDialog').close(); await refresh();
 });
 $('enqueueSelectedNext').onclick = () => enqueue(visible.filter(t => selected.has(t.id)).map(t => t.id),true);
@@ -73,7 +73,7 @@ window.addEventListener('focus',() => { if (!document.querySelector('dialog[open
       queueModel.setShuffle(!!saved.shuffled);
     }
     syncQueue();
-    shuffled = saved.queueModel?.version === 2 ? queueModel.shuffled : !!saved.shuffled; repeating = !!saved.repeating; queuePlaylistId = saved.queuePlaylistId || null; queueName = saved.queueName || 'Медиатека';
+    shuffled = saved.queueModel?.version === 2 ? queueModel.shuffled : !!saved.shuffled; repeating = !!saved.repeating; queuePlaylistId = saved.queuePlaylistId || null; queueName = saved.queueName || tr("Library");
     for (const [id,value] of [['shuffle',shuffled],['repeat',repeating]]) { $(id).classList.toggle('enabled',value); $(id).setAttribute('aria-pressed',value); }
     if (currentId) {
       playbackState = 'paused'; audio.src = '/media/' + currentId; updateNowPlaying();
@@ -81,5 +81,5 @@ window.addEventListener('focus',() => { if (!document.querySelector('dialog[open
       audio.addEventListener('loadedmetadata',() => { if (restoredEntryId === queueModel.currentEntryId && Number.isFinite(saved.position) && saved.position < audio.duration) audio.currentTime = saved.position; },{once:true});
     }
     renderTracks(); renderQueue(); reportPlayback(); flushListens();
-  } catch(e) { toast('Не удалось подключиться: ' + e.message); document.querySelector('.connection').lastChild.textContent = ' Нет связи'; }
+  } catch(e) { toast((tr("Could not connect:") + " ") + e.message); document.querySelector('.connection').lastChild.textContent = (' ' + tr("Disconnected")); }
 })();

@@ -1,4 +1,4 @@
-﻿const {test} = require('node:test');
+const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const Catalog = require('../web/catalog.js');
 const track = (id,values={}) => ({id,path:id + '.mp3',title:id,artist:'Band',album:'Album',year:'2000',track_number:0,disc_number:0,...values});
@@ -34,7 +34,7 @@ test('disc and track numbers take priority over filenames; missing numbers sort 
 test('untagged albums stay separated by storage folder and unknown artist is navigable', () => {
   const catalog = new Catalog([track('a',{album:'',artist:'',path:'One/a.mp3'}),track('b',{album:'',artist:'',path:'Two/b.mp3'})]);
   assert.equal(catalog.albums.size,2);
-  assert.equal(catalog.artists.get('').name,'Неизвестный исполнитель');
+  assert.equal(catalog.artists.get('').name,'Unknown artist');
   assert.equal(catalog.artists.get('').tracks.length,2);
 });
 
@@ -46,10 +46,12 @@ test('normalized case and whitespace group the same album without duplicating ar
 });
 
 test('search is case insensitive and sorting uses numeric album names', () => {
-  const catalog = new Catalog([track('a',{album:'Album 10',artist:'Артист'}),track('b',{album:'Album 2',artist:'Артист'})]);
-  assert.deepEqual(catalog.albumList('АРТИСТ').map(a => a.title),['Album 2','Album 10']);
-  assert.equal(catalog.artistList('арТиСт').length,1);
+  const catalog = new Catalog([track('a',{album:'Album 10',artist:'Artist'}),track('b',{album:'Album 2',artist:'Artist'})]);
+  assert.deepEqual(catalog.albumList('ARTIST').map(a => a.title),['Album 2','Album 10']);
+  assert.equal(catalog.artistList('aRtIsT').length,1);
   assert.equal(catalog.albumList('missing').length,0);
+  const unicode = new Catalog([track('unicode', {artist:'\u0410\u0440\u0442\u0438\u0441\u0442'})]);
+  assert.equal(unicode.albumList('\u0410\u0420\u0422\u0418\u0421\u0422').length, 1);
 });
 
 test('cover, total duration and newest addition are derived from grouped tracks', () => {

@@ -14,14 +14,14 @@ ROOT = Path(__file__).resolve().parent
 
 def absolute(value, base):
     if not isinstance(value, str) or not value or any(ord(c) < 32 for c in value):
-        raise ValueError('Путь должен быть непустой строкой без управляющих символов')
+        raise ValueError('Path must be a nonempty string without control characters')
     path = Path(value).expanduser()
     return (path if path.is_absolute() else base / path).resolve()
 
 
 def check_python():
     if sys.version_info < (3, 10):
-        raise ValueError('Нужен Python 3.10 или новее')
+        raise ValueError('Python 3.10 or newer is required')
     try:
         import sqlite3
         db = sqlite3.connect(':memory:')
@@ -30,7 +30,7 @@ def check_python():
         finally:
             db.close()
     except ImportError as error:
-        raise ValueError('В Python отсутствует sqlite3. Установите поддержку SQLite пакетом вашего дистрибутива.') from error
+        raise ValueError('Python has no sqlite3 support. Install SQLite support using your distribution’s packages.') from error
 
 
 def atomic_write(path, content):
@@ -56,11 +56,11 @@ def prepare_config(args, root=ROOT, cwd=None):
     previous = config_path.read_bytes() if config_path.exists() else None
     config = json.loads(previous.decode('utf-8-sig')) if previous is not None else {}
     if not isinstance(config, dict):
-        raise ValueError('Конфиг должен содержать JSON-объект')
+        raise ValueError('Config must contain a JSON object')
     if args.music_dir is not None:
         config['music_dir'] = str(absolute(args.music_dir, cwd))
     elif not config.get('music_dir'):
-        raise ValueError('Для первой установки укажите --music-dir /путь/к/музыке')
+        raise ValueError('For the first installation, specify --music-dir /path/to/music')
     config['music_dir'] = str(absolute(config['music_dir'], root))
     if args.database is not None:
         config['database'] = str(absolute(args.database, cwd))
@@ -78,24 +78,24 @@ def prepare_config(args, root=ROOT, cwd=None):
             config[key] = value
         configured = config.get(key)
         if configured is not None and configured is not False and not isinstance(configured, str):
-            raise ValueError('Некорректный путь ' + key)
+            raise ValueError('Invalid path ' + key)
     if not isinstance(config['host'], str) or not config['host'].strip() or any(ord(c) < 32 for c in config['host']):
-        raise ValueError('Некорректный адрес --host')
+        raise ValueError('Invalid --host address')
     for key, maximum in [('port', 65535), ('max_upload_mb', 2147483647)]:
         value = config[key]
         if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
-            raise ValueError('Некорректное значение ' + key)
+            raise ValueError('Invalid value ' + key)
     music = Path(config['music_dir'])
     database = Path(config['database'])
     if database == music or (database.exists() and not database.is_file()):
-        raise ValueError('Путь базы должен указывать на файл SQLite')
+        raise ValueError('Database path must point to a SQLite file')
     music.mkdir(parents=True, exist_ok=True)
     database.parent.mkdir(parents=True, exist_ok=True)
     for directory in (music, database.parent):
         if not os.access(directory, os.R_OK | os.W_OK | os.X_OK):
-            raise ValueError('Нужны права чтения и записи: ' + str(directory))
+            raise ValueError('Read and write permissions required: ' + str(directory))
     if database.exists() and not os.access(database, os.R_OK | os.W_OK):
-        raise ValueError('Нет доступа к базе: ' + str(database))
+        raise ValueError('No database access: ' + str(database))
     content = json.dumps(config, ensure_ascii=False, indent=2) + '\n'
     backup = None
     if previous != content.encode('utf-8'):
@@ -145,28 +145,28 @@ def main(argv=None):
         command_parser.error('Unknown arguments: ' + ' '.join(extra))
     try:
         if not sys.platform.startswith('linux'):
-            raise ValueError('Эти скрипты предназначены для Linux; на Windows запускайте python server.py.')
+            raise ValueError('These scripts are for Linux; on Windows run python server.py.')
         check_python()
         if args.action == 'run':
             config = absolute(args.config, Path.cwd()) if args.config else ROOT / 'config.json'
             if args.config and not config.is_file():
-                raise ValueError('Конфиг не найден: ' + str(config))
+                raise ValueError('Config not found: ' + str(config))
             if not config.is_file() and not any(arg == '--music-dir' or arg.startswith('--music-dir=') for arg in extra):
-                raise ValueError('Сначала выполните bash install-linux.sh --music-dir /путь/к/музыке')
+                raise ValueError('First run bash install-linux.sh --music-dir /path/to/music')
             launch(config if config.is_file() else None, extra)
             return 0
         config_path, config, backup = prepare_config(args)
-        print('Конфиг: ' + str(config_path), flush=True)
-        print('Музыка: ' + config['music_dir'], flush=True)
-        print('База: ' + config['database'], flush=True)
+        print('Config: ' + str(config_path), flush=True)
+        print('Music: ' + config['music_dir'], flush=True)
+        print('Database: ' + config['database'], flush=True)
         if backup:
-            print('Предыдущий конфиг: ' + str(backup), flush=True)
+            print('Previous config: ' + str(backup), flush=True)
         if not shutil.which(config.get('ffprobe') or 'ffprobe'):
-            print('FFprobe не найден; теги/обложки потребуют FFmpeg (--with-ffmpeg на apt-системах).', flush=True)
-        print('Подготовка завершена. Запуск: ' + shlex.join(['bash', str(ROOT / 'run-linux.sh'), '--config', str(config_path)]), flush=True)
+            print('FFprobe not found; tags/covers require FFmpeg (--with-ffmpeg on apt-based systems).', flush=True)
+        print('Preparation complete. Start: ' + shlex.join(['bash', str(ROOT / 'run-linux.sh'), '--config', str(config_path)]), flush=True)
         return 0
     except (OSError, ValueError) as error:
-        print('Установка/запуск не выполнены: ' + str(error), file=sys.stderr)
+        print('Installation/start failed: ' + str(error), file=sys.stderr)
         return 1
 
 

@@ -1,4 +1,4 @@
-﻿import tempfile
+import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -72,7 +72,7 @@ class HealthTests(unittest.TestCase):
     def test_metadata_failures_are_separate_from_file_health_and_missing_tools(self):
         with self.library.connect() as db:
             db.execute("UPDATE tracks SET metadata_error='Broken tags' WHERE path='a.mp3'")
-            db.execute("UPDATE tracks SET metadata_error='ffprobe не найден: доступны только данные из имени файла' WHERE path='b.flac'")
+            db.execute("UPDATE tracks SET metadata_error='ffprobe not found: only file name data is available' WHERE path='b.flac'")
         report=self.run_check()
         self.assertEqual(report['counts']['metadata'],1)
         self.assertEqual(report['counts']['problems'],0)

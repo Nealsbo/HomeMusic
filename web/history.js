@@ -106,8 +106,8 @@ async function loadHistory(reset = true) {
     const response = await api('history?' + params);
     if (request !== historyRequest) return;
     const devices = response.devices.map(d => [d.id,d.name]);
-    if (device && !devices.some(d => d[0] === device)) devices.push([device,'Выбранное устройство (нет записей)']);
-    options($('historyDevice'),[['','Все устройства'],...devices]);
+    if (device && !devices.some(d => d[0] === device)) devices.push([device,tr("Selected device (no entries)")]);
+    options($('historyDevice'),[['',tr("All devices")],...devices]);
     const entries = reset ? response.items : [...historyItems,...response.items];
     historyItems = [...new Map(entries.map(item => [item.id,item])).values()];
     historyCursor = response.nextCursor; historyTotal = response.total;
@@ -115,14 +115,14 @@ async function loadHistory(reset = true) {
   } finally { if (request === historyRequest) $('historyMore').disabled = false; }
 }
 function renderHistory() {
-  $('historyCount').textContent = `${historyTotal} прослушиваний · показано ${historyItems.length}`;
+  $('historyCount').textContent = tr('{count} plays · showing {shown}', {count:historyTotal,shown:historyItems.length});
   $('historyMore').hidden = !historyCursor;
   $('historyEntries').innerHTML = historyItems.map(event => {
     const available = event.trackId && trackMap.has(event.trackId);
     const resume = available && !event.ended && event.position > 3 && (!event.duration || event.position < event.duration - 3);
-    const date = new Date(event.started * 1000).toLocaleString('ru-RU');
-    return `<article class="history-entry"><div class="mini-cover">${coverHTML(event)}</div><div class="history-track"><button class="track-name" data-history-play="${escapeHTML(event.id)}" ${available ? '' : 'disabled'}>${escapeHTML(event.title)}</button><span class="track-artist">${escapeHTML(event.artist || 'Неизвестный исполнитель')}</span><small>${escapeHTML(date)} · ${escapeHTML(event.deviceName)} · прослушано ${clock(event.listened)}${available ? '' : ' · файл удалён'}</small></div>${resume ? `<button class="secondary" data-history-resume="${escapeHTML(event.id)}">Продолжить с ${clock(event.position)}</button>` : ''}</article>`;
-  }).join('') || '<div class="empty"><h2>Здесь появится ваша история</h2><p>Послушайте трек достаточно долго или выберите другое устройство.</p></div>';
+    const date = new Date(event.started * 1000).toLocaleString(MusicI18n.locale);
+    return `<article class="history-entry"><div class="mini-cover">${coverHTML(event)}</div><div class="history-track"><button class="track-name" data-history-play="${escapeHTML(event.id)}" ${available ? '' : 'disabled'}>${escapeHTML(event.title)}</button><span class="track-artist">${escapeHTML(event.artist || tr("Unknown artist"))}</span><small>${escapeHTML(date)} · ${escapeHTML(event.deviceName)} · ${escapeHTML(tr("listened"))} ${clock(event.listened)}${available ? '' : (' · ' + escapeHTML(tr("file deleted")))}</small></div>${resume ? `<button class="secondary" data-history-resume="${escapeHTML(event.id)}">${escapeHTML(tr("Resume from"))} ${clock(event.position)}</button>` : ''}</article>`;
+  }).join('') || ('<div class="empty"><h2>' + escapeHTML(tr("Your history will appear here")) + '</h2><p>' + escapeHTML(tr("Listen to a track long enough, or select another device.")) + '</p></div>');
 }
 $('favoriteCurrent').onclick = handle(() => toggleFavorite(currentId));
 $('historyDevice').onchange = handle(() => loadHistory(true));

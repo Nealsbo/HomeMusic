@@ -12,14 +12,14 @@ ID = re.compile(r'[A-Za-z0-9_-]{1,80}')
 
 def identifier(value):
     if not isinstance(value, str) or not ID.fullmatch(value):
-        raise ValueError('Некорректный идентификатор')
+        raise ValueError('Invalid ID')
     return value
 
 
 def seconds(value):
     result = float(value or 0)
     if not math.isfinite(result) or not 0 <= result <= 7 * 86400:
-        raise ValueError('Некорректное время прослушивания')
+        raise ValueError('Invalid listening time')
     return result
 
 
@@ -50,10 +50,10 @@ class ListeningStore:
         track = identifier(data.get('id'))
         value = data.get('value')
         if not isinstance(value, bool):
-            raise ValueError('Укажите true или false для избранного')
+            raise ValueError('Specify true or false for favorites')
         with self.lock, self.connect() as db:
             if not db.execute('SELECT 1 FROM tracks WHERE id=?', (track,)).fetchone():
-                raise ValueError('Трек не найден')
+                raise ValueError('Track not found')
             if value:
                 db.execute('INSERT OR IGNORE INTO favorites VALUES(?,?)', (track, time.time()))
             else:
@@ -64,7 +64,7 @@ class ListeningStore:
         device = identifier(data.get('id'))
         name = ''.join(c for c in str(data.get('name') or '')[:80] if ord(c) >= 32).strip()
         if not name:
-            raise ValueError('Введите имя устройства')
+            raise ValueError('Enter a device name')
         with self.lock, self.connect() as db:
             db.execute('INSERT INTO devices VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,updated=excluded.updated',
                        (device, name, time.time()))
@@ -74,29 +74,29 @@ class ListeningStore:
         event, track, device = (identifier(data.get(key)) for key in ('id', 'trackId', 'deviceId'))
         seq = data.get('seq')
         if not isinstance(seq, int) or isinstance(seq, bool) or not 1 <= seq <= 2**53 - 1:
-            raise ValueError('Некорректный номер отчёта')
+            raise ValueError('Invalid report sequence number')
         heard, position, duration = (seconds(data.get(key)) for key in ('listened', 'position', 'duration'))
         ended = data.get('ended', False)
         if not isinstance(ended, bool):
-            raise ValueError('Некорректный признак завершения')
-        name = str(data.get('deviceName') or 'Браузер')[:80]
-        name = ''.join(c for c in name if ord(c) >= 32).strip() or 'Браузер'
+            raise ValueError('Invalid completion flag')
+        name = str(data.get('deviceName') or 'Browser')[:80]
+        name = ''.join(c for c in name if ord(c) >= 32).strip() or 'Browser'
         with self.lock, self.connect() as db:
             self.cleanup(db)
             old = db.execute('SELECT * FROM listens WHERE id=?', (event,)).fetchone()
             if old and (old['track'] != track or old['device'] != device):
-                raise ValueError('Идентификатор прослушивания уже используется')
+                raise ValueError('Listening session ID is already in use')
             if old and seq <= old['seq']:
                 return dict(ok=True, qualified=bool(old['qualified']))
             song = db.execute('SELECT title,artist,album,duration FROM tracks WHERE id=?', (track,)).fetchone()
             if song is None:
-                raise ValueError('Трек не найден')
+                raise ValueError('Track not found')
             now = time.time()
             started = now - heard
             if data.get('startedAt') is not None:
                 declared = float(data['startedAt'])
                 if not math.isfinite(declared) or declared < 0:
-                    raise ValueError('Некорректное время начала прослушивания')
+                    raise ValueError('Invalid listening start time')
                 if now - RETENTION_DAYS * 86400 <= declared <= now + 300:
                     started = min(declared, now)
             db.execute('INSERT INTO devices VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,updated=excluded.updated',
@@ -132,7 +132,7 @@ class ListeningStore:
             identifier(device)
         limit = int(limit)
         if not 1 <= limit <= 100:
-            raise ValueError('Размер страницы должен быть от 1 до 100')
+            raise ValueError('Page size must be between 1 and 100')
         where, params = ['h.qualified=1'], []
         if device:
             where.append('h.device=?')
@@ -140,7 +140,7 @@ class ListeningStore:
         if before_started is not None:
             value = float(before_started)
             if not math.isfinite(value) or value < 0:
-                raise ValueError('Некорректный указатель страницы')
+                raise ValueError('Invalid page cursor')
             identifier(before_id)
             where.append('(h.started<? OR (h.started=? AND h.id<?))')
             params.extend([value, value, before_id])

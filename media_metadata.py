@@ -51,7 +51,7 @@ class MetadataReader:
         result.update(dict.fromkeys(TECH_FIELDS, 0))
         result.update(codec='', cover_id='', metadata_error='')
         if not self.ffprobe:
-            result['metadata_error'] = 'ffprobe не найден: доступны только данные из имени файла'
+            result['metadata_error'] = 'ffprobe not found: only file name data is available'
             return result
         try:
             fields = ('format=duration,bit_rate:format_tags=title,artist,album,album_artist,albumartist,genre,date,year,track,disc:'
@@ -62,14 +62,14 @@ class MetadataReader:
                               '-probesize', '5000000', '-analyzeduration', '5000000',
                               '-show_entries', fields, '-of', 'json', str(path)])
             if probe.returncode:
-                raise ValueError(probe.stderr.decode('utf-8', errors='replace')[-500:].strip() or 'Не удалось прочитать аудио')
+                raise ValueError(probe.stderr.decode('utf-8', errors='replace')[-500:].strip() or 'Could not read audio')
             if len(probe.stdout) > 4 * 1024 * 1024:
-                raise ValueError('Слишком большой блок метаданных')
+                raise ValueError('Metadata block is too large')
             data = json.loads(probe.stdout)
             streams = data.get('streams', [])
             audio = next((s for s in streams if s.get('codec_type') == 'audio'), None)
             if audio is None:
-                raise ValueError('Аудиопоток не найден')
+                raise ValueError('No audio stream found')
             info = data.get('format', {})
             tags = {str(k).lower(): str(v) for k, v in audio.get('tags', {}).items()}
             tags.update({str(k).lower(): str(v) for k, v in info.get('tags', {}).items()})
@@ -92,14 +92,14 @@ class MetadataReader:
                 try:
                     result['cover_id'] = self.cover(path, picture)
                 except (OSError, ValueError, subprocess.SubprocessError) as error:
-                    result['metadata_error'] = f'Обложка: {error}'[:600]
+                    result['metadata_error'] = f'Cover: {error}'[:600]
         except (OSError, ValueError, TypeError, subprocess.SubprocessError) as error:
             result['metadata_error'] = str(error)[:600]
         return result
 
     def cover(self, path, picture):
         if number(picture.get('width')) * number(picture.get('height')) > 25_000_000:
-            raise ValueError('Обложка превышает 25 мегапикселей')
+            raise ValueError('Cover image exceeds 25 megapixels')
         temporary = self.cache / ('.cover-' + uuid.uuid4().hex + '.jpg')
         try:
             output = self.run([self.ffmpeg, '-v', 'error', '-nostdin', '-y', '-max_alloc', '67108864',
@@ -108,9 +108,9 @@ class MetadataReader:
                 '-vf', 'scale=320:320:force_original_aspect_ratio=decrease',
                 '-threads', '1', '-c:v', 'mjpeg', '-q:v', '4', '-update', '1', str(temporary)], timeout=30)
             if output.returncode or not temporary.exists():
-                raise ValueError('Не удалось извлечь изображение')
+                raise ValueError('Could not extract the image')
             if temporary.stat().st_size > 2 * 1024 * 1024:
-                raise ValueError('Слишком большая миниатюра')
+                raise ValueError('Thumbnail is too large')
             identifier = hashlib.sha256(temporary.read_bytes()).hexdigest()
             target = self.cache / (identifier + '.jpg')
             if not target.exists():

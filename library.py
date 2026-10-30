@@ -82,19 +82,19 @@ class Library:
     def path(self, relative='', must_exist=False):
         if (not isinstance(relative, str) or '\\' in relative or ':' in relative
                 or any(ord(c) < 32 for c in relative)):
-            raise ValueError('Недопустимый путь')
+            raise ValueError('Invalid path')
         parts = PurePosixPath(relative)
         if parts.is_absolute() or '..' in parts.parts:
-            raise ValueError('Путь должен находиться в музыкальной директории')
+            raise ValueError('Path must be inside the music directory')
         target = self.root.joinpath(*parts.parts)
         # Reject symlinks, including links to other locations within the library.
         cursor = self.root
         for part in parts.parts:
             cursor = cursor / part
             if cursor.is_symlink():
-                raise ValueError('Символические ссылки не поддерживаются')
+                raise ValueError('Symbolic links are not supported')
         if not target.resolve().is_relative_to(self.root):
-            raise ValueError('Выход за музыкальную директорию')
+            raise ValueError('Outside the music directory')
         if must_exist and not target.exists():
             raise FileNotFoundError(relative)
         return target
@@ -221,36 +221,36 @@ class Library:
         with self.connect() as db:
             row = db.execute('SELECT * FROM tracks WHERE id=?', (identifier,)).fetchone()
             if row is None:
-                raise FileNotFoundError('Трек не найден')
+                raise FileNotFoundError('Track not found')
             return dict(row)
 
     def playback(self, data):
         """Ephemeral browser reports, not a server-side audio player."""
         identifier = data.get('clientId')
         if not isinstance(identifier, str) or not re_client_id(identifier):
-            raise ValueError('Некорректный идентификатор плеера')
+            raise ValueError('Invalid player ID')
         playback_state = data.get('state', 'idle')
         if playback_state not in {'idle', 'playing', 'paused', 'buffering', 'ended', 'error'}:
-            raise ValueError('Некорректное состояние плеера')
+            raise ValueError('Invalid player state')
         def seconds(key):
             value = float(data.get(key) or 0)
             if not math.isfinite(value) or value < 0:
-                raise ValueError('Некорректное время воспроизведения')
+                raise ValueError('Invalid playback time')
             return value
         position, duration = seconds('position'), seconds('duration')
         volume = float(data.get('volume', .75))
         if not math.isfinite(volume) or not 0 <= volume <= 1:
-            raise ValueError('Некорректная громкость')
+            raise ValueError('Invalid volume')
         seq = int(data.get('seq', 0))
         queue = data.get('queue')
         if queue is not None and (not isinstance(queue, list) or len(queue) > 20000 or
                                   any(not isinstance(t, str) or len(t) > 64 for t in queue)):
-            raise ValueError('Некорректная очередь')
+            raise ValueError('Invalid queue')
         entry_ids = data.get('queueEntryIds')
         if entry_ids is not None and (queue is None or not isinstance(entry_ids, list) or
                 len(entry_ids) != len(queue) or any(not isinstance(t, str) or not re_client_id(t) for t in entry_ids)
                 or len(set(entry_ids)) != len(entry_ids)):
-            raise ValueError('Некорректные элементы очереди')
+            raise ValueError('Invalid queue entries')
         with self.lock:
             now = time.time()
             self.clients = {k: v for k, v in self.clients.items() if now - v['lastSeen'] < 300}
@@ -258,15 +258,15 @@ class Library:
             if seq <= old.get('seq', -1):
                 return {'ok': True}
             if not old and len(self.clients) >= 128:
-                raise ValueError('Достигнут лимит отслеживаемых плееров')
+                raise ValueError('The tracked player limit has been reached')
             self.clients[identifier] = dict(
                 clientId=identifier, seq=seq, volume=volume, controlVersion=1 if data.get('controlVersion') == 1 else 0,
-                deviceId=str(data.get('deviceId') or '')[:80], name=str(data.get('name') or 'Браузер')[:100],
+                deviceId=str(data.get('deviceId') or '')[:80], name=str(data.get('name') or 'Browser')[:100],
                 state=playback_state, trackId=str(data.get('trackId') or '')[:64],
                 queueEntryId=str(data.get('queueEntryId') or '')[:80],
                 queueEntryIds=entry_ids if entry_ids is not None else ([] if queue is not None else old.get('queueEntryIds', [])),
                 playlistId=str(data.get('playlistId') or '')[:64],
-                queueName=str(data.get('queueName') or 'Очередь')[:160],
+                queueName=str(data.get('queueName') or 'Queue')[:160],
                 queue=queue if queue is not None else old.get('queue', []),
                 position=position, duration=duration, lastSeen=now,
                 error=str(data.get('error') or '')[:1000])
@@ -296,7 +296,7 @@ class Library:
                     'SELECT id,title,artist,path FROM tracks WHERE id IN (' + ','.join('?' for _ in ids) + ')', ids)}
                 item.update(track=tracks.get(client['trackId']), queueCount=len(queue),
                             queueIndex=current, queueStart=start,
-                            queue=[tracks.get(t, dict(id=t, title='Удалённый трек', artist='')) for t in preview])
+                            queue=[tracks.get(t, dict(id=t, title='Deleted track', artist='')) for t in preview])
                 for offset, track in enumerate(item['queue']):
                     item['queue'][offset] = {**track, 'entryId': entry_ids[start + offset] if entry_ids else ''}
                 playlist = next((p for p in playlists if p['id'] == client['playlistId']), None)
@@ -338,30 +338,30 @@ class Library:
             elif action == 'playlist':
                 name = str(data['name']).strip()[:160]
                 if not name:
-                    raise ValueError('Введите название плейлиста')
+                    raise ValueError('Enter a playlist name')
                 identifier = data.get('id') or uuid.uuid4().hex
                 before = self.operations.playlist(db, identifier)
                 db.execute('INSERT INTO playlists VALUES(?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name',
                            (identifier, name))
-                operation_id = self.operations.record(db, 'playlist', identifier, 'Плейлист: ' + name, before, self.operations.playlist(db, identifier))
+                operation_id = self.operations.record(db, 'playlist', identifier, 'Playlist: ' + name, before, self.operations.playlist(db, identifier))
                 return {'id': identifier, 'operationId': operation_id}
             elif action == 'deletePlaylist':
                 before = self.operations.playlist(db, data['id'])
                 db.execute('DELETE FROM playlists WHERE id=?', (data['id'],))
-                operation_id = self.operations.record(db, 'playlist', data['id'], 'Удаление плейлиста: ' + (before['name'] if before else ''), before, None)
+                operation_id = self.operations.record(db, 'playlist', data['id'], 'Playlist deletion: ' + (before['name'] if before else ''), before, None)
             elif action == 'playlistTracks':
                 identifier = data['id']
                 before = self.operations.playlist(db, identifier)
                 if not db.execute('SELECT 1 FROM playlists WHERE id=?', (identifier,)).fetchone():
-                    raise ValueError('Плейлист не найден')
+                    raise ValueError('Playlist not found')
                 ids = list(dict.fromkeys(data['tracks']))
                 valid = {r[0] for r in db.execute('SELECT id FROM tracks')}
                 if any(t not in valid for t in ids):
-                    raise ValueError('Один из треков был удалён. Обновите медиатеку.')
+                    raise ValueError('One of the tracks was deleted. Refresh the library.')
                 db.execute('DELETE FROM items WHERE playlist=?', (identifier,))
                 db.executemany('INSERT INTO items VALUES(?,?,?)',
                                [(identifier, t, i) for i, t in enumerate(ids)])
-                operation_id = self.operations.record(db, 'playlist', identifier, 'Состав и порядок плейлиста: ' + before['name'], before, self.operations.playlist(db, identifier))
+                operation_id = self.operations.record(db, 'playlist', identifier, 'Playlist contents and order: ' + before['name'], before, self.operations.playlist(db, identifier))
             elif action == 'order':
                 db.executemany('UPDATE tracks SET position=? WHERE id=?',
                                [(i, t) for i, t in enumerate(dict.fromkeys(data['tracks']))])
@@ -370,14 +370,14 @@ class Library:
                     if key in data:
                         value = data[key]
                         if key == 'title':
-                            value = str(value).strip()[:80] or 'Тихая волна'
+                            value = str(value).strip()[:80] or 'Quiet Wave'
                         else:
                             value = max(0, min(1, float(value)))
                         db.execute('INSERT OR REPLACE INTO settings VALUES(?,?)', (key, json.dumps(value)))
             elif action == 'metadata':
                 row = db.execute('SELECT * FROM tracks WHERE id=?', (data['id'],)).fetchone()
                 if row is None:
-                    raise ValueError('Трек не найден')
+                    raise ValueError('Track not found')
                 before = json.loads(row['overrides'])
                 overrides = dict(before)
                 if data.get('reset'):
@@ -391,7 +391,7 @@ class Library:
                 db.execute('UPDATE tracks SET ' + ','.join(key + '=?' for key in EDIT_FIELDS) +
                            ',overrides=? WHERE id=?', [values[key] for key in EDIT_FIELDS] +
                            [json.dumps(overrides, ensure_ascii=False), data['id']])
-                operation_id = self.operations.record(db, 'metadata', data['id'], 'Метаданные: ' + row['title'], before, overrides)
+                operation_id = self.operations.record(db, 'metadata', data['id'], 'Metadata: ' + row['title'], before, overrides)
             elif action == 'import':
                 content = str(data['content']).lstrip('\ufeff')
                 tracks = list(db.execute('SELECT id,path FROM tracks'))
@@ -417,10 +417,10 @@ class Library:
                 db.execute('INSERT INTO playlists VALUES(?,?)', (identifier, str(data['name'])[:160]))
                 db.executemany('INSERT INTO items VALUES(?,?,?)',
                                [(identifier, t, i) for i, t in enumerate(matched)])
-                operation_id = self.operations.record(db, 'playlist', identifier, 'Импорт плейлиста: ' + str(data['name']), None, self.operations.playlist(db, identifier))
+                operation_id = self.operations.record(db, 'playlist', identifier, 'Playlist import: ' + str(data['name']), None, self.operations.playlist(db, identifier))
                 return {'id': identifier, 'matched': len(matched), 'missing': missing, 'operationId': operation_id}
             else:
-                raise ValueError('Неизвестная команда')
+                raise ValueError('Unknown command')
         return {'ok': True, 'operationId': operation_id}
 
 

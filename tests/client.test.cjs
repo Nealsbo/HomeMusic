@@ -2,13 +2,18 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const {audioGraph,drawingContext} = require('./audio-fixture.cjs');
 
 class Element {
   constructor(id) {
     this.id = id; this._value = id === 'sort' ? 'manual' : id === 'libraryList' ? 'all' : ''; this.options = id === 'sort' ? [{value:'manual'}] : [];
     this.hidden = false; this.checked = false; this.dataset = {}; this.children = {}; this.textContent = '';
     this.attributes = {}; this.listeners = {};
-    this.classList = {toggle(){},add(){},remove(){}};
+    const classes = new Set();
+    this.classList = {toggle(name,force) { const add = force ?? !classes.has(name); add ? classes.add(name) : classes.delete(name); return add; },
+      add:name => classes.add(name),remove:name => classes.delete(name),contains:name => classes.has(name)};
+    this.nodes = []; this.parentNode = null;
+    this.style = {setProperty(key,value) { this[key] = value; }};
   }
   set innerHTML(html) {
     this.html = html;
@@ -22,10 +27,19 @@ class Element {
   set value(value) { this._value = String(value); }
   querySelector(selector) { return this.children[selector] ??= new Element(selector); }
   setAttribute(name,value) { this.attributes[name] = value; }
+  append(...nodes) {
+    for (const node of nodes) {
+      if (node.parentNode) node.parentNode.nodes = node.parentNode.nodes.filter(other => other !== node);
+      node.parentNode = this; this.nodes.push(node);
+    }
+  }
+  replaceChildren(...nodes) { for (const node of this.nodes) node.parentNode = null; this.nodes = []; this.html = ''; this.textContent = ''; this.append(...nodes); }
+  remove() { if (this.parentNode) this.parentNode.nodes = this.parentNode.nodes.filter(node => node !== this); this.parentNode = null; }
+  focus() { if (this.ownerDocument) this.ownerDocument.activeElement = this; }
   addEventListener(name,fn,options = {}) { (this.listeners[name] ||= []).push({fn,once:options.once}); }
   emit(name) { this['on' + name]?.(); const list = this.listeners[name] || []; this.listeners[name] = list.filter(e => !e.once); list.forEach(e => e.fn()); }
   removeAttribute(name) { if (name === 'src') this.src = undefined; }
-  load() { if (this.id === 'audio') { this.currentTime = 0; this.paused = true; } }
+  load() { this.loadCalls = (this.loadCalls || 0) + 1; if (this.id === 'audio') { this.currentTime = 0; this.paused = true; } }
   showModal() { this.open = true; }
   close() { this.open = false; }
 }
@@ -37,22 +51,38 @@ const fixture = () => ({
   ],
   playlists:[{id:'p',name:'Mix',tracks:['c','a','b']}],folders:['','Jazz'],settings:{},storage:'/music',maxUploadMB:512
 });
-async function client({headStatus = 200, savedPlayer = null, listenFailures = 0, initialStorage = {}, controlTransport = null, healthTransport = null, operationTransport = null} = {}) {
+async function client({headStatus = 200, savedPlayer = null, listenFailures = 0, initialStorage = {}, initialSessionStorage = {}, controlTransport = null, healthTransport = null, operationTransport = null, reducedMotion = false, audioContextFactory = null, drawing = null} = {}) {
   let data = fixture(); const elements = new Map(); const calls = [];
-  const get = id => { if (!elements.has(id)) elements.set(id,new Element(id)); return elements.get(id); };
+  let document;
+  const get = id => { if (!elements.has(id)) elements.set(id,new Element(id)); const element = elements.get(id); element.ownerDocument = document; return element; };
   const audio = get('audio'); Object.assign(audio,{paused:true,currentTime:0,duration:120,volume:.75});
-  audio.play = async () => { audio.paused = false; audio.onplay?.(); };
-  audio.pause = () => { audio.paused = true; audio.onpause?.(); };
+  audio.play = async () => { audio.paused = false; audio.emit('play'); };
+  audio.pause = () => { audio.paused = true; audio.emit('pause'); };
   let now = 0;
   const local = new Map(Object.entries(initialStorage));
+  const session = new Map(Object.entries(initialSessionStorage));
   if (savedPlayer) local.set('player',JSON.stringify(savedPlayer));
   const connection = {lastChild:{textContent:''}};
+  const documentListeners = new Map();
+  const createdElements = [];
+  const timers = {timeouts:0,intervals:0};
+  const timeoutTasks = new Map();
+  const motionListeners = new Set();
+  const motionPreference = {matches:reducedMotion,addEventListener(name,fn) { motionListeners.add(fn); },removeEventListener(name,fn) { motionListeners.delete(fn); }};
   const sandbox = {
-    document:{documentElement:{dataset:{},style:{}},getElementById:get,querySelectorAll:() => [],querySelector:s => s === '.connection' ? connection : null,hidden:false},
-    navigator:{},window:{addEventListener(){}},
+    document:{documentElement:{dataset:{},style:{},classList:get('documentElement').classList},getElementById:get,querySelectorAll:() => [],querySelector:s => s === '.connection' ? connection : null,hidden:false,
+      createElement(tag) { const element = new Element(''); element.tagName = tag.toUpperCase(); element.ownerDocument = document; if (tag === 'canvas' && drawing) element.getContext = () => drawing; createdElements.push(element); return element; },
+      addEventListener(name,fn) { if (!documentListeners.has(name)) documentListeners.set(name,[]); documentListeners.get(name).push(fn); },
+      removeEventListener(name,fn) { documentListeners.set(name,(documentListeners.get(name) || []).filter(listener => listener !== fn)); },
+      dispatchEvent(event) { for (const fn of documentListeners.get(event.type) || []) fn(event); }},
+    navigator:{},window:{addEventListener(){},matchMedia:() => motionPreference,AudioContext:audioContextFactory},
     localStorage:{getItem:k => local.get(k),setItem:(k,v) => local.set(k,v),removeItem:k => local.delete(k),get length() { return local.size; },key:i => [...local.keys()][i]},
-    TextEncoder, URLSearchParams, performance:{now:() => now},
-    setInterval:() => 1,setTimeout:() => 1,clearTimeout(){},console,
+    sessionStorage:{getItem:k => session.get(k),setItem:(k,v) => session.set(k,v)},
+    TextEncoder, URLSearchParams, Event, performance:{now:() => now},
+    setInterval:() => ++timers.intervals,
+    setTimeout:(fn,delay) => { const id = ++timers.timeouts; timeoutTasks.set(id,{fn,delay}); return id; },
+    clearTimeout:id => timeoutTasks.delete(id),console:{...console},
+    getComputedStyle:() => ({color:({forest:'#24754b',midnight:'#74b9e8',sand:'#9b5634'})[document.documentElement.dataset.theme] || '#24754b'}),
     fetch:async (url,options = {}) => {
       if (url.startsWith('/locales/')) return {ok:true,json:async () => JSON.parse(fs.readFileSync('web' + url,'utf8'))};
       const action = url.replace('/api/',''); const body = options.body ? JSON.parse(options.body) : undefined;
@@ -74,13 +104,22 @@ async function client({headStatus = 200, savedPlayer = null, listenFailures = 0,
       return {ok:true,json:async () => JSON.parse(JSON.stringify(action === 'state' ? data : result))};
     }
   };
+  document = sandbox.document;
+  get('compactPlayerHome').append(get('compactPlayer'));
+  if (drawing) { get('audioWave').getContext = () => drawing; get('audioWave').width = 720; get('audioWave').height = 192; }
+  get('expandedAppearancePanel').hidden = true;
   const context = vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync('web/i18n.js','utf8'),context);
   await sandbox.MusicI18n.initialize();
-  for (const [,src] of fs.readFileSync('web/index.html','utf8').matchAll(/data-app-src="\/([^"]+)"/g)) vm.runInContext(fs.readFileSync('web/' + src,'utf8'),context);
+  for (const [,src] of fs.readFileSync('web/index.html','utf8').matchAll(/data-app-src="\/([^"]+)"/g)) {
+    vm.runInContext(fs.readFileSync('web/' + src,'utf8'),context);
+    if (src === 'client-session.js') await sandbox.browserSession.ready;
+  }
   await new Promise(resolve => setImmediate(resolve));
   const run = expression => vm.runInContext(expression,context);
-  return {get,audio,run,calls,local,advanceTime:ms => { now += ms; },data:() => data};
+  return {get,audio,run,calls,local,session,timers,createdElements,timeoutTasks,
+    setReducedMotion(value) { motionPreference.matches = value; for (const listener of motionListeners) listener({matches:value}); },
+    advanceTime:ms => { now += ms; },data:() => data};
 }
 
 test('initial library includes nested folders and selects the first playlist destination',async () => {
@@ -555,6 +594,54 @@ test('redelivered next command after lost ack executes once',async () => {
   await c.run('pollPlayerCommands()'); assert.equal(c.run('currentId'),'b'); assert.equal(acknowledgements,2);
 });
 
+test('five page reloads keep one player identity and increasing report sequence numbers', async () => {
+  let local = {}, session = {}, id, previousSeq = 0;
+  for (let reload = 0; reload < 6; reload++) {
+    const c = await client({initialStorage:local,initialSessionStorage:session});
+    await c.run('reportPlayback()');
+    id ||= c.run('clientId');
+    assert.equal(c.run('clientId'), id);
+    const reports = c.calls.filter(call => call.action === 'playback');
+    for (const report of reports) {
+      assert.equal(report.body.clientId, id);
+      assert.ok(report.body.seq > previousSeq);
+      previousSeq = report.body.seq;
+    }
+    local = Object.fromEntries(c.local);
+    session = Object.fromEntries(c.session);
+  }
+  const anotherTab = await client({initialStorage:local});
+  assert.notEqual(anotherTab.run('clientId'), id);
+});
+
+test('lost next acknowledgement is retried after reload without advancing again', async () => {
+  let acknowledgements = 0;
+  const transport = action => {
+    if (action === 'control-poll') return {command:{id:'reload-command',action:'next'}};
+    if (action === 'control-ack') { if (++acknowledgements === 1) throw Error('offline'); return {}; }
+  };
+  const first = await client({controlTransport:transport});
+  await first.run("playTrack('a',['a','b','c'])");
+  await first.run('pollPlayerCommands()');
+  assert.equal(first.run('currentId'), 'b');
+  const second = await client({controlTransport:transport,
+    initialStorage:Object.fromEntries(first.local),initialSessionStorage:Object.fromEntries(first.session)});
+  assert.equal(second.run('clientId'), first.run('clientId'));
+  await second.run('pollPlayerCommands()');
+  assert.equal(second.run('currentId'), 'b');
+  assert.equal(acknowledgements, 2);
+});
+
+test('transfer pause from the previous page cannot stop playback after a reload', async () => {
+  const first = await client();
+  await first.run("playTrack('a',['a','b'])");
+  const snapshot = await first.run("executePlayerCommand({action:'export'})");
+  const second = await client({initialStorage:Object.fromEntries(first.local),initialSessionStorage:Object.fromEntries(first.session)});
+  await second.audio.play();
+  await assert.rejects(second.run(`executePlayerCommand({action:'pause',value:{guard:${JSON.stringify(snapshot.snapshot.guard)}}})`), /source track changed/);
+  assert.equal(second.audio.paused, false);
+});
+
 test('transfer snapshot preserves duplicate occurrences, shuffle history and position with local volume',async () => {
   const source=await client(), target=await client();
   await source.run("playTrack('a',['a','b','a'])"); await source.run('step(1)');
@@ -768,4 +855,396 @@ test('saved Russian language is available before the first application render', 
   const ru = JSON.parse(fs.readFileSync('web/locales/ru.json', 'utf8'));
   assert.equal(c.get('pageTitle').textContent, ru['Your library']);
   assert.equal(c.get('nowArtist').textContent, ru['Your collection is waiting']);
+});
+
+test('expanded player reuses controls and preserves audio, queue and listening across all modes', async () => {
+  const c = await client();
+  await c.run("playTrack('a',['a','b','a'])");
+  c.audio.currentTime = 37; c.audio.volume = .4;
+  const original = c.get('compactPlayer'), toggle = c.get('togglePlay').onclick;
+  const snapshot = c.run('JSON.stringify(queueModel.snapshot())');
+  const listening = c.run('listeningSession');
+  const source = c.audio.src, loads = c.audio.loadCalls, generation = c.run('playbackGeneration');
+  const requests = c.calls.length, timers = {...c.timers};
+  for (const mode of ['album','effects','cd','album']) {
+    await c.get('expandPlayer').onclick();
+    c.run(`expandedPlayer.setMode(${JSON.stringify(mode)})`);
+    assert.equal(c.get('expandedPlayerDialog').open, true);
+    assert.equal(original.parentNode, c.get('expandedPlayerControls'));
+    assert.equal(c.get('expandedTrackTitle').textContent, 'Alpha');
+    assert.equal(c.get('expandedTrackAlbum').textContent, 'Night');
+    c.run('expandedPlayer.close(true)');
+    assert.equal(original.parentNode, c.get('compactPlayerHome'));
+  }
+  assert.equal(c.audio.paused, false); assert.equal(c.audio.currentTime, 37); assert.equal(c.audio.volume, .4);
+  assert.equal(c.audio.src, source); assert.equal(c.audio.loadCalls, loads);
+  assert.equal(c.run('playbackGeneration'), generation);
+  assert.equal(c.run('listeningSession'), listening);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'), snapshot);
+  assert.equal(c.get('togglePlay').onclick, toggle);
+  assert.equal(c.calls.length, requests);
+  assert.deepEqual(c.timers, timers);
+});
+
+test('expanded controls, remote commands and queue dialog keep working on the same player', async () => {
+  const c = await client();
+  await c.run("playTrack('a',['a','b','c'])");
+  c.run('expandedPlayer.open()');
+  await c.get('togglePlay').onclick(); assert.equal(c.audio.paused, true);
+  await c.get('togglePlay').onclick(); assert.equal(c.audio.paused, false);
+  await c.run("executePlayerCommand({action:'next'})");
+  assert.equal(c.get('expandedTrackTitle').textContent, 'Beta');
+  c.get('seek').value = 50; c.get('seek').oninput(); assert.equal(c.audio.currentTime, 60);
+  c.get('volume').value = .25; c.get('volume').oninput(); assert.equal(c.audio.volume, .25);
+  c.get('queueButton').onclick(); assert.equal(c.get('queueDialog').open, true);
+  assert.equal(c.run('expandedPlayer.isOpen'), true);
+  c.get('queueDialog').close();
+  c.run('expandedPlayer.close(true)');
+  assert.equal(c.run('currentId'), 'b'); assert.equal(c.audio.paused, false);
+});
+
+test('expanded player keyboard navigation persists mode and restores focus after collapse', async () => {
+  const c = await client();
+  c.run('expandedPlayer.open()');
+  assert.equal(c.run('document.activeElement.id'), 'collapsePlayer');
+  let prevented = false;
+  c.get('expandedPlayerTabs').onkeydown({key:'ArrowLeft',target:c.get('expandedTab-album'),preventDefault() { prevented = true; }});
+  assert.equal(prevented, true); assert.equal(c.run('expandedPlayer.mode'), 'cd');
+  assert.equal(c.run('document.activeElement.id'), 'expandedTab-cd');
+  assert.equal(c.get('expandedTab-cd').attributes['aria-selected'], 'true');
+  assert.equal(c.get('expandedTab-album').tabIndex, -1);
+  c.get('expandedPlayerTabs').onkeydown({key:'Home',target:c.get('expandedTab-cd'),preventDefault(){}});
+  assert.equal(c.run('expandedPlayer.mode'), 'album');
+  c.get('expandedTab-effects').onclick();
+  c.get('collapsePlayer').onclick();
+  assert.equal(c.get('expandedPlayerDialog').open, true);
+  c.get('expandedPlayerDialog').ontransitionend({target:c.get('expandedPlayerDialog'),propertyName:'transform'});
+  assert.equal(c.get('expandedPlayerDialog').open, false);
+  assert.equal(c.run('document.activeElement.id'), 'expandPlayer');
+  assert.equal(c.get('expandPlayer').attributes['aria-expanded'], 'false');
+  const restored = await client({initialStorage:Object.fromEntries(c.local)});
+  assert.equal(restored.run('expandedPlayer.mode'), 'effects');
+  assert.equal(restored.run('expandedPlayer.isOpen'), false);
+  const invalid = await client({initialStorage:{expandedPlayerMode:JSON.stringify('missing')}});
+  assert.equal(invalid.run('expandedPlayer.mode'), 'album');
+});
+
+test('reduced motion collapses immediately and ordinary clicks do not dismiss the player', async () => {
+  const c = await client({reducedMotion:true});
+  c.run('expandedPlayer.open()');
+  assert.equal(c.get('expandedPlayerDialog').onclick, undefined);
+  let prevented = false;
+  c.get('expandedPlayerDialog').oncancel({preventDefault() { prevented = true; }});
+  assert.equal(prevented, true);
+  assert.equal(c.get('expandedPlayerDialog').open, false);
+  assert.equal(c.get('compactPlayer').parentNode, c.get('compactPlayerHome'));
+});
+
+test('expanded view localizes live and preserves all existing themes', async () => {
+  const c = await client();
+  await c.run("playTrack('a',['a','b'])");
+  c.run("expandedPlayer.open(); expandedPlayer.setMode('effects')");
+  const source = c.audio.src;
+  for (const theme of ['forest','midnight','sand']) {
+    c.run(`applyTheme(${JSON.stringify(theme)})`);
+    await c.run("MusicI18n.setLanguage('ru')");
+    const ru = JSON.parse(fs.readFileSync('web/locales/ru.json','utf8'));
+    assert.equal(c.createdElements.filter(element => element.className === 'effects-enable')[0].nodes[1].textContent,ru['Enable visualization']);
+    assert.equal(c.run('document.documentElement.dataset.theme'), theme);
+    await c.run("MusicI18n.setLanguage('en')");
+    assert.equal(c.createdElements.filter(element => element.className === 'effects-enable')[0].nodes[1].textContent,'Enable visualization');
+  }
+  assert.equal(c.audio.src, source); assert.equal(c.audio.paused, false);
+  c.run('expandedPlayer.close(true)');
+});
+
+test('visual failures are isolated and view subscriptions stop after collapse', async () => {
+  const c = await client();
+  await c.run("playTrack('a',['a','b'])");
+  c.run(`globalThis.viewUpdates = 0; globalThis.viewDisposed = 0; console.error = () => {};
+    playerViews.register('effects', () => ({mount(){},setActive(){},
+      update(){ viewUpdates++; throw Error('Broken view'); },dispose(){ viewDisposed++; }}));
+    expandedPlayer.open(); expandedPlayer.setMode('effects');`);
+  assert.equal(c.get('expandedPlayerStage').textContent, 'This view is unavailable. Playback will continue.');
+  assert.equal(c.audio.paused, false); assert.equal(c.run('viewDisposed'), 1);
+  await c.run('playbackBridge.commands.next()');
+  assert.equal(c.get('expandedTrackTitle').textContent, 'Beta');
+  c.run("expandedPlayer.setMode('album'); expandedPlayer.close(true)");
+  const title = c.get('expandedTrackTitle').textContent;
+  await c.run('playbackBridge.commands.previous()');
+  assert.equal(c.get('expandedTrackTitle').textContent, title);
+  assert.equal(c.audio.paused, false);
+  assert.equal(c.run('viewUpdates'), 1);
+});
+
+test('reopening during collapse and delayed native close events do not detach active controls', async () => {
+  const c = await client();
+  c.run('expandedPlayer.open(); expandedPlayer.close(); expandedPlayer.open()');
+  c.get('expandedPlayerDialog').ontransitionend({target:c.get('expandedPlayerDialog'),propertyName:'transform'});
+  assert.equal(c.run('expandedPlayer.isOpen'), true);
+  c.run('expandedPlayer.close(true); expandedPlayer.open()');
+  c.get('expandedPlayerDialog').onclose();
+  assert.equal(c.run('expandedPlayer.isOpen'), true);
+  assert.equal(c.get('compactPlayer').parentNode, c.get('expandedPlayerControls'));
+  c.run('expandedPlayer.close(true)');
+});
+
+test('album artwork follows metadata and remote track changes without additional audio loads', async () => {
+  const c = await client();
+  await c.run("playTrack('a',['a','b'])");
+  c.audio.currentTime = 29;
+  c.run('expandedPlayer.open()');
+  assert.equal(c.createdElements.filter(element => element.tagName === 'IMG').length, 0);
+  const source = c.audio.src, loads = c.audio.loadCalls, listening = c.run('listeningSession');
+  c.data().tracks[0].cover_id = 'a'.repeat(64);
+  c.data().tracks[1].cover_id = 'b'.repeat(64);
+  await c.run('refresh()');
+  const first = c.createdElements.find(element => element.tagName === 'IMG');
+  assert.equal(first.src, '/covers/' + 'a'.repeat(64) + '.jpg');
+  first.naturalWidth = 500; first.naturalHeight = 400; first.onload();
+  for (let i = 0; i < 5; i++) c.audio.emit('timeupdate');
+  assert.equal(c.createdElements.filter(element => element.tagName === 'IMG').length, 1);
+  assert.equal(c.audio.src, source); assert.equal(c.audio.loadCalls, loads);
+  assert.equal(c.audio.currentTime, 29); assert.equal(c.run('listeningSession'), listening);
+  await c.run("MusicI18n.setLanguage('ru')");
+  const ru = JSON.parse(fs.readFileSync('web/locales/ru.json','utf8'));
+  assert.equal(first.alt, ru['Album artwork: {album}'].replace('{album}', 'Night'));
+  assert.equal(c.createdElements.filter(element => element.tagName === 'IMG').length, 1);
+  await c.run("executePlayerCommand({action:'next'})");
+  const second = c.createdElements.filter(element => element.tagName === 'IMG')[1];
+  assert.equal(second.src, '/covers/' + 'b'.repeat(64) + '.jpg');
+  assert.equal(c.get('expandedTrackTitle').textContent, 'Beta');
+  second.naturalWidth = 400; second.naturalHeight = 400; second.onload();
+  assert.equal(c.audio.loadCalls, loads + 1);
+  c.run('expandedPlayer.close(true)');
+  assert.equal(first.src, undefined); assert.equal(second.src, undefined);
+  assert.equal(c.audio.paused, false);
+});
+
+test('switching away from a loading cover discards its callbacks and preserves paused playback', async () => {
+  const c = await client();
+  c.data().tracks[0].cover_id = 'a'.repeat(64);
+  await c.run('refresh()');
+  await c.run("playTrack('a',['a','b'])");
+  c.audio.pause(); c.audio.currentTime = 18;
+  c.run('expandedPlayer.open()');
+  const image = c.createdElements.find(element => element.tagName === 'IMG');
+  const late = image.onload;
+  c.run("expandedPlayer.setMode('effects')");
+  late();
+  assert.equal(image.parentNode, null);
+  assert.equal(c.createdElements.find(element => element.className === 'effects-status').textContent,'Visualization is unavailable in this browser');
+  c.run("expandedPlayer.setMode('album')");
+  const retry = c.createdElements.filter(element => element.tagName === 'IMG')[1];
+  retry.onerror();
+  assert.equal(c.createdElements.filter(element => element.className === 'album-artwork-status').at(-1).textContent, 'Artwork unavailable');
+  assert.equal(c.audio.paused, true); assert.equal(c.audio.currentTime, 18);
+  c.run('expandedPlayer.close(true)');
+});
+
+test('appearance controls synchronize across both panels and preserve playback in all themes', async () => {
+  const c = await client();
+  await c.run("playTrack('a',['a','b'])");
+  c.audio.currentTime = 27;
+  c.run('expandedPlayer.open()');
+  c.get('expandedAppearanceToggle').onclick();
+  assert.equal(c.get('expandedAppearancePanel').hidden, false);
+  assert.equal(c.run('document.activeElement.id'), 'expandedBackgroundSetting');
+  const source = c.audio.src, loads = c.audio.loadCalls, requests = c.calls.length;
+  const queue = c.run('JSON.stringify(queueModel.snapshot())'), listening = c.run('listeningSession');
+  for (const theme of ['forest','midnight','sand']) {
+    c.run(`applyTheme(${JSON.stringify(theme)})`);
+    for (const background of ['none','ambient','waves','texture']) {
+      c.get('expandedBackgroundSetting').onchange({target:{value:background}});
+      c.get('expandedIntensitySetting').oninput({target:{value:'70'}});
+      assert.equal(c.get('playerBackgroundSetting').value, background);
+      assert.equal(c.get('playerIntensityValue').textContent, '70%');
+      assert.equal(c.get('playerIntensitySetting').disabled, background === 'none');
+      assert.equal(c.get('expandedPlayerDialog').dataset.background, background);
+      assert.equal(c.run('document.documentElement.dataset.theme'), theme);
+    }
+  }
+  c.get('playerAnimationSetting').onchange({target:{checked:false}});
+  assert.equal(c.get('expandedAnimationSetting').checked, false);
+  assert.equal(c.get('expandedPlayerDialog').dataset.motion, 'off');
+  assert.equal(c.audio.src, source); assert.equal(c.audio.loadCalls, loads); assert.equal(c.audio.currentTime, 27);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'), queue); assert.equal(c.run('listeningSession'), listening);
+  assert.equal(c.calls.length, requests);
+  c.get('collapsePlayer').onclick();
+  assert.equal(c.get('expandedPlayerDialog').open, false);
+  assert.equal(c.get('expandedAppearancePanel').hidden, true);
+  const restored = await client({initialStorage:Object.fromEntries(c.local)});
+  assert.equal(restored.get('playerBackgroundSetting').value, 'texture');
+  assert.equal(restored.get('playerIntensitySetting').value, '70');
+  assert.equal(restored.get('playerAnimationSetting').checked, false);
+});
+
+test('decorative motion only runs for visible active playback and responds live to reduced motion', async () => {
+  const c = await client();
+  await c.run("playTrack('a',['a','b'])");
+  c.run("playerAppearance.set({background:'waves'}); expandedPlayer.open()");
+  const dialog = c.get('expandedPlayerDialog');
+  assert.equal(dialog.dataset.backgroundMotion, 'on');
+  c.audio.pause(); assert.equal(dialog.dataset.backgroundMotion, 'off');
+  await c.audio.play(); assert.equal(dialog.dataset.backgroundMotion, 'on');
+  c.audio.emit('waiting'); assert.equal(dialog.dataset.backgroundMotion, 'off');
+  c.audio.emit('playing'); assert.equal(dialog.dataset.backgroundMotion, 'on');
+  c.run("document.hidden=true; document.dispatchEvent(new Event('visibilitychange'))");
+  assert.equal(dialog.dataset.backgroundMotion, 'off');
+  c.run("document.hidden=false; document.dispatchEvent(new Event('visibilitychange'))");
+  assert.equal(dialog.dataset.backgroundMotion, 'on');
+  c.setReducedMotion(true);
+  assert.equal(dialog.dataset.motion, 'off'); assert.equal(dialog.dataset.backgroundMotion, 'off');
+  assert.equal(c.get('expandedAnimationSetting').checked, true);
+  assert.equal(c.get('expandedReducedMotionNote').hidden, false);
+  c.setReducedMotion(false);
+  assert.equal(dialog.dataset.backgroundMotion, 'on');
+  c.run('playerAppearance.set({intensity:0})');
+  assert.equal(dialog.dataset.backgroundVisible, 'false'); assert.equal(dialog.dataset.backgroundMotion, 'off');
+  c.run('playerAppearance.set({intensity:100})');
+  assert.equal(dialog.dataset.backgroundMotion, 'on');
+  c.get('collapsePlayer').onclick(); assert.equal(dialog.dataset.backgroundMotion, 'off');
+  c.run('playerAppearance.set({animation:false})');
+  assert.equal(dialog.open, false);
+  assert.equal(c.audio.paused, false);
+});
+
+test('appearance preferences remain local and independent of mode, theme and library wave', async () => {
+  const first = await client();
+  first.run("applyTheme('midnight'); setWaveMode('eco'); expandedPlayer.setMode('cd'); playerAppearance.set({background:'texture',intensity:95,animation:false})");
+  await first.run("MusicI18n.setLanguage('ru')");
+  assert.equal(first.run('expandedPlayer.mode'), 'cd');
+  assert.equal(first.run('waveMode'), 'eco');
+  assert.equal(first.run('document.documentElement.dataset.theme'), 'midnight');
+  const second = await client();
+  assert.equal(second.run('playerAppearance.get().background'), 'ambient');
+  assert.equal(second.run('playerAppearance.get().animation'), true);
+  const restored = await client({initialStorage:Object.fromEntries(first.local)});
+  assert.equal(restored.run('expandedPlayer.mode'), 'cd');
+  assert.equal(restored.run('playerAppearance.get().background'), 'texture');
+  assert.equal(restored.run('playerAppearance.get().animation'), false);
+  assert.equal(restored.run('waveMode'), 'eco');
+});
+
+test('library wave and expanded effects reuse one audible graph across repeated view changes', async () => {
+  const graph = audioGraph(null), drawing = drawingContext();
+  const c = await client({drawing,audioContextFactory:function() { return graph.createContext(); }});
+  await c.run("playTrack('a',['a','b'])"); c.audio.emit('playing'); c.audio.currentTime = 41;
+  c.run("setWaveMode('eco')"); await c.run('audioWave.unlock()');
+  const source = c.audio.src, loads = c.audio.loadCalls, listening = c.run('listeningSession');
+  const queue = c.run('JSON.stringify(queueModel.snapshot())'), requests = c.calls.length;
+  assert.equal(graph.counts.sources, 1); assert.equal(graph.audio, c.audio);
+  for (let i = 0; i < 4; i++) {
+    c.run("expandedPlayer.open(); expandedPlayer.setMode('effects')");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal([...c.timeoutTasks.values()].filter(timer => timer.delay === 1000 / 30).length, 1);
+    assert.equal(c.run('audioWave.timer'), null);
+    assert.equal(graph.counts.sources, 1); assert.ok(graph.links.has(graph.context.destination));
+    c.run("expandedPlayer.setMode('album')");
+    assert.equal([...c.timeoutTasks.values()].filter(timer => timer.delay === 1000 / 30).length, 0);
+    c.run('expandedPlayer.close(true)');
+    assert.notEqual(c.run('audioWave.timer'), null);
+    assert.equal(c.run('audioAnalysis.listeners.size'), 1);
+  }
+  assert.equal(graph.counts.contexts, 1); assert.equal(graph.counts.analysers, 1);
+  assert.equal(graph.counts.badDisconnects, 0); assert.equal(graph.counts.closes, 0);
+  assert.equal(c.audio.src, source); assert.equal(c.audio.loadCalls, loads); assert.equal(c.audio.currentTime, 41);
+  assert.equal(c.run('listeningSession'), listening); assert.equal(c.run('JSON.stringify(queueModel.snapshot())'), queue);
+  assert.equal(c.calls.length, requests);
+});
+
+test('effect controls persist locally and respect motion restrictions without altering background settings', async () => {
+  const graph = audioGraph(null);
+  const c = await client({drawing:drawingContext(),audioContextFactory:function() { return graph.createContext(); }});
+  await c.run("playTrack('a',['a','b'])"); c.audio.emit('playing');
+  c.run("expandedPlayer.open(); expandedPlayer.setMode('effects')");
+  await new Promise(resolve => setImmediate(resolve));
+  const preset = c.createdElements.find(element => element.className === 'effects-controls').nodes[0].nodes[1];
+  const intensity = c.createdElements.find(element => element.className === 'effects-controls').nodes[1].nodes[1];
+  const enabled = c.createdElements.find(element => element.className === 'effects-enable').nodes[0];
+  preset.onchange({target:{value:'waveform'}}); intensity.oninput({target:{value:'85'}});
+  assert.equal(JSON.parse(c.local.get('expandedPlayerEffects')).preset, 'waveform');
+  assert.equal(c.run('playerAppearance.get().intensity'), 40);
+  c.setReducedMotion(true);
+  assert.equal([...c.timeoutTasks.values()].filter(timer => timer.delay === 1000 / 30).length, 0);
+  assert.ok(graph.links.has(graph.context.destination)); assert.equal(graph.links.has(graph.analyser), false);
+  c.setReducedMotion(false);
+  assert.equal([...c.timeoutTasks.values()].filter(timer => timer.delay === 1000 / 30).length, 1);
+  enabled.onchange({target:{checked:false}});
+  assert.equal([...c.timeoutTasks.values()].filter(timer => timer.delay === 1000 / 30).length, 0);
+  assert.equal(c.run('playerAppearance.get().animation'), true);
+  c.run('expandedPlayer.close(true)');
+  const restoredGraph = audioGraph(null);
+  const restored = await client({initialStorage:Object.fromEntries(c.local),drawing:drawingContext(),audioContextFactory:function() { return restoredGraph.createContext(); }});
+  restored.run('expandedPlayer.open()');
+  const controls = restored.createdElements.find(element => element.className === 'effects-controls');
+  assert.equal(controls.nodes[0].nodes[1].value, 'waveform');
+  assert.equal(controls.nodes[1].nodes[1].value, '85');
+  assert.equal(controls.nodes[2].nodes[0].checked, false);
+  assert.equal(restoredGraph.counts.contexts, 0);
+});
+
+test('CD static fallback reuses album presentation without affecting playback', async () => {
+  const graph = audioGraph(null);
+  const c = await client({audioContextFactory:function() { return graph.createContext(); }});
+  await c.run("playTrack('a',['a','b'])"); c.audio.emit('playing'); c.audio.currentTime = 33;
+  const source = c.audio.src, loads = c.audio.loadCalls, listening = c.run('listeningSession');
+  const queue = c.run('JSON.stringify(queueModel.snapshot())'), requests = c.calls.length;
+  c.run("expandedPlayer.open(); expandedPlayer.setMode('cd')");
+  assert.ok(c.createdElements.some(element => element.className === 'album-view'));
+  assert.equal(c.createdElements.find(element => element.className === 'cd-status').textContent, '3D is unavailable. Showing static artwork.');
+  c.run("expandedPlayer.setMode('album'); expandedPlayer.setMode('cd'); expandedPlayer.close(true)");
+  assert.equal(c.audio.src, source); assert.equal(c.audio.loadCalls, loads); assert.equal(c.audio.currentTime, 33);
+  assert.equal(c.run('listeningSession'), listening); assert.equal(c.run('JSON.stringify(queueModel.snapshot())'), queue);
+  assert.equal(c.calls.length, requests, JSON.stringify(c.calls.slice(requests))); assert.equal(graph.counts.contexts, 0);
+});
+
+test('CD scene interactions and lifecycle preserve the existing audio and queue', async () => {
+  const graph = audioGraph(null);
+  const c = await client({audioContextFactory:function() { return graph.createContext(); }});
+  c.run(`globalThis.cdStats = {imports:0,renders:0,disposed:0};
+    playerViews.register('cd',context => new CDPlayerView({createFallback:context.artworkFactory,
+      createContext:() => ({}),isWeakDevice:() => false,
+      schedule:fn => { globalThis.cdFrame = fn; return 1; },cancel:() => { globalThis.cdFrame = null; },
+      loadScene:async () => { cdStats.imports++; return {createCDScene:() => ({
+        resize(){},setPalette(){},setArtwork(){},render(){cdStats.renders++;},dispose(){cdStats.disposed++;}
+      })}; }}));`);
+  await c.run("playTrack('a',['a','b'])"); c.audio.emit('playing'); c.audio.currentTime = 41;
+  await new Promise(resolve => setImmediate(resolve));
+  const source = c.audio.src, loads = c.audio.loadCalls, listening = c.run('listeningSession');
+  const queue = c.run('JSON.stringify(queueModel.snapshot())'), requests = c.calls.length;
+  c.run("expandedPlayer.setMode('cd')");
+  assert.equal(c.run('cdStats.imports'), 0);
+  for (let i = 0; i < 3; i++) {
+    c.run('expandedPlayer.open()'); await new Promise(resolve => setImmediate(resolve));
+    const controls = c.createdElements.filter(element => element.className === 'cd-controls').at(-1);
+    controls.nodes[0].onclick(); controls.nodes[1].onclick(); controls.nodes[3].onclick();
+    const canvas = c.createdElements.filter(element => element.className === 'cd-canvas').at(-1);
+    canvas.onkeydown({key:'ArrowRight',preventDefault(){}});
+    c.advanceTime(34); c.run('cdFrame()');
+    c.run("expandedPlayer.setMode('album'); expandedPlayer.setMode('cd')");
+    await new Promise(resolve => setImmediate(resolve)); c.run('expandedPlayer.close(true)');
+  }
+  assert.ok(c.run('cdStats.renders') > 0);
+  assert.equal(c.run('cdStats.disposed'), c.run('cdStats.imports'));
+  assert.equal(c.audio.src, source); assert.equal(c.audio.loadCalls, loads); assert.equal(c.audio.currentTime, 41);
+  assert.equal(c.audio.paused, false); assert.equal(c.run('listeningSession'), listening);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'), queue);
+  assert.equal(c.calls.length, requests, JSON.stringify(c.calls.slice(requests))); assert.equal(graph.counts.contexts, 0);
+});
+
+test('analysis failure in effects leaves playback controls and the audible connection usable', async () => {
+  const graph = audioGraph(null);
+  const c = await client({drawing:drawingContext(),audioContextFactory:function() { return graph.createContext(); }});
+  await c.run("playTrack('a',['a','b'])"); c.audio.emit('playing');
+  c.run("expandedPlayer.open(); expandedPlayer.setMode('effects')");
+  await new Promise(resolve => setImmediate(resolve));
+  graph.analyser.getByteFrequencyData = () => { throw Error('read failed'); };
+  const [id,timer] = [...c.timeoutTasks.entries()].find(([,timer]) => timer.delay === 1000 / 30);
+  c.timeoutTasks.delete(id); timer.fn();
+  assert.equal(c.createdElements.find(element => element.className === 'effects-status').textContent,'Visualization is unavailable in this browser');
+  assert.equal(c.audio.paused, false); assert.ok(graph.links.has(graph.context.destination));
+  await c.get('next').onclick(); assert.equal(c.run('currentId'), 'b'); assert.equal(c.audio.paused, false);
+  assert.equal(graph.counts.sources, 1); assert.equal(graph.counts.badDisconnects, 0); assert.equal(graph.counts.closes, 0);
+  c.run('expandedPlayer.close(true)');
 });

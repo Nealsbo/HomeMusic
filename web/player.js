@@ -1,6 +1,7 @@
 async function reportPlayback() {
+  await browserSession.ready;
   const signature = queueModel.order.join(',');
-  const body = {clientId, deviceId, controlVersion:1, volume:audio.volume, seq: ++reportSeq, name: deviceName,
+  const body = {clientId, deviceId, controlVersion:1, volume:audio.volume, seq: browserSession.nextSequence(), name: deviceName,
     state: playbackState, trackId: currentId, queueEntryId: queueModel.currentEntryId, playlistId: queuePlaylistId, queueName,
     position: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
     duration: Number.isFinite(audio.duration) ? audio.duration : 0, error: playbackError};
@@ -24,6 +25,7 @@ async function diagnosePlayback(id, code = 4, generation = playbackGeneration) {
   } catch (error) { message = (tr("Could not check file availability:") + " ") + error.message; }
   if (id !== currentId || generation !== playbackGeneration) return;
   playbackState = 'error'; playbackError = message;
+  globalThis.playbackBridge?.publish();
   $('playbackError').textContent = message; $('playbackError').hidden = false;
   toast(message); reportPlayback();
 }
@@ -34,6 +36,7 @@ function syncQueue() {
 function persistPlayer() {
   store('player', {queueModel:queueModel.snapshot(), queue,currentId,position:audio.currentTime,
     shuffled,repeating,queuePlaylistId,queueName});
+  globalThis.playbackBridge?.publish();
 }
 function coverHTML(track) {
   return /^[a-f0-9]{64}$/.test(track?.cover_id || '') ? `<img src="/covers/${track.cover_id}.jpg" alt="" loading="lazy">` : '♫';
@@ -51,6 +54,7 @@ function updateNowPlaying() {
   $('favoriteCurrent').setAttribute('aria-label',$('favoriteCurrent').title);
   if (t && 'mediaSession' in navigator && 'MediaMetadata' in window) navigator.mediaSession.metadata = new MediaMetadata({title:t.title,artist:t.artist,album:t.album,
     artwork:t.cover_id ? [{src:location.origin + '/covers/' + t.cover_id + '.jpg',type:'image/jpeg'}] : []});
+  globalThis.playbackBridge?.publish();
 }
 function renderQueue() {
   const ordered = queueModel.ordered;
@@ -89,7 +93,7 @@ async function loadCurrent(autoplay = true, resumePosition = 0) {
   if (!autoplay) return;
   try { await audio.play(); } catch(e) {
     if (generation !== playbackGeneration) return;
-    if (e.name === 'NotAllowedError') { playbackState = 'paused'; toast(tr("Press ▶ to start playback in this browser.")); reportPlayback(); }
+    if (e.name === 'NotAllowedError') { playbackState = 'paused'; globalThis.playbackBridge?.publish(); toast(tr("Press ▶ to start playback in this browser.")); reportPlayback(); }
     else if (e.name !== 'AbortError') await diagnosePlayback(id, audio.error?.code || 4, generation);
   }
 }
@@ -135,12 +139,13 @@ function playVisibleMusic() {
   return tracks.length ? playTrack(tracks[0].id,tracks.map(t => t.id),0,context?.title || null) : toast(tr("Add music to your collection"));
 }
 $('playAll').onclick = handle(() => playVisibleMusic());
-$('togglePlay').onclick = handle(async () => {
+async function togglePlayback() {
   if (!currentId) {
     if (queueModel.order.length) { queueModel.next(); await loadCurrent(); }
     else await playVisibleMusic();
   } else if (audio.paused) await audio.play(); else audio.pause();
-});
+}
+$('togglePlay').onclick = handle(togglePlayback);
 $('previous').onclick = handle(() => step(-1)); $('next').onclick = handle(() => step(1));
 $('shuffle').onclick = () => { shuffled = !shuffled; queueModel.setShuffle(shuffled); syncQueue(); renderQueue(); reportPlayback(); $('shuffle').classList.toggle('enabled',shuffled); $('shuffle').setAttribute('aria-pressed',shuffled); persistPlayer(); };
 $('repeat').onclick = () => { repeating = !repeating; $('repeat').classList.toggle('enabled',repeating); $('repeat').setAttribute('aria-pressed',repeating); persistPlayer(); };

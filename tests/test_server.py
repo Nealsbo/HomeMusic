@@ -58,12 +58,28 @@ class MusicServerTests(unittest.TestCase):
         return next(t for t in self.library.state()['tracks'] if t['path'].endswith('.mp3'))
 
     def test_localization_assets_are_json_and_traversal_is_rejected(self):
+        status, headers, body = self.request('GET', '/client-session.js')
+        self.assertEqual(status, 200)
+        self.assertEqual(headers['Content-Type'], 'text/javascript; charset=utf-8')
+        self.assertIn(b'MusicClientSession', body)
+        for path, mime in [('/cd-view.js','text/javascript'), ('/cd-scene.mjs','text/javascript'),
+                           ('/vendor/three-r180/three.module.min.js','text/javascript'),
+                           ('/vendor/three-r180/three.core.min.js','text/javascript'),
+                           ('/vendor/three-r180/manifest.json','application/json'),
+                           ('/audio-analysis.js','text/javascript'), ('/effects-view.js','text/javascript'), ('/player-appearance.js','text/javascript'), ('/album-view.js','text/javascript'), ('/player-bridge.js','text/javascript'), ('/player-views.js','text/javascript'),
+                           ('/expanded-player.js','text/javascript'), ('/expanded-player.css','text/css')]:
+            status, headers, body = self.request('GET', path)
+            self.assertEqual(status, 200)
+            self.assertEqual(headers['Content-Type'], mime + '; charset=utf-8')
+            self.assertTrue(body)
         for language in ('en', 'ru', 'languages'):
             status, headers, body = self.request('GET', '/locales/' + language + '.json')
             self.assertEqual(status, 200)
             self.assertEqual(headers['Content-Type'], 'application/json; charset=utf-8')
             self.assertTrue(json.loads(body))
-        for path in ('/locales/../config.example.json', '/locales/%2e%2e/config.example.json', '/locales/missing.json'):
+        for path in ('/locales/../config.example.json', '/locales/%2e%2e/config.example.json', '/locales/missing.json',
+                     '/vendor/three-r180/package.json', '/vendor/three-r180/../package.json',
+                     '/vendor/three-r180/%2e%2e/config.example.json', '/vendor/missing.js'):
             status, _, _ = self.request('GET', path)
             self.assertEqual(status, 404)
 

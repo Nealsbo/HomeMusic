@@ -1,11 +1,12 @@
 /* Commands address a browser session, never all tabs sharing a device name. */
-const commandResults = new Map();
+const commandResults = new Map(browserSession.commands);
+let commandResultsOwner = clientId;
 let commandPollBusy = false, devicesRefreshBusy = false, deviceSessions = [], watchedCommand = null;
 const deviceStates = {idle:"Idle",playing:"Playing",paused:"Paused",buffering:"Buffering",ended:"Completed",error:"Error"};
 function playerSnapshot() {
   return JSON.parse(JSON.stringify({queueModel:queueModel.snapshot(),position:audio.currentTime || 0,
     playing:!audio.paused, repeating,queuePlaylistId,queueName,
-    guard:{generation:playbackGeneration,entryId:queueModel.currentEntryId}}));
+    guard:{pageId:browserSession.pageId,generation:playbackGeneration,entryId:queueModel.currentEntryId}}));
 }
 function applySnapshot(snapshot) {
   queueModel.restore(snapshot.queueModel,trackMap); shuffled = queueModel.shuffled;
@@ -72,7 +73,7 @@ async function executePlayerCommand(command) {
       if (audio.paused || playbackState === 'error') throw Error(playbackError || tr("Press play on this device to allow playback"));
       break;
     case 'pause':
-      if (command.value?.guard && (command.value.guard.generation !== playbackGeneration || command.value.guard.entryId !== queueModel.currentEntryId)) throw Error(tr("The source track changed; playback was not stopped"));
+      if (command.value?.guard && ((command.value.guard.pageId && command.value.guard.pageId !== browserSession.pageId) || command.value.guard.generation !== playbackGeneration || command.value.guard.entryId !== queueModel.currentEntryId)) throw Error(tr("The source track changed; playback was not stopped"));
       audio.pause(); break;
     case 'next': case 'previous': await step(command.action === 'next' ? 1 : -1); break;
     case 'seek':
@@ -91,19 +92,26 @@ async function executePlayerCommand(command) {
   await reportPlayback(); return {};
 }
 async function pollPlayerCommands() {
+  await browserSession.ready;
+  if (commandResultsOwner !== clientId) { commandResults.clear(); commandResultsOwner = clientId; }
   if (commandPollBusy) return;
   commandPollBusy = true;
+  const targetId = clientId;
   try {
-    const {command} = await api('control-poll',{clientId});
+    const {command} = await api('control-poll',{clientId:targetId});
+    if (clientId !== targetId) return;
     if (!command) return;
     let result = commandResults.get(command.id);
     if (!result) {
+      // If navigation interrupts an asynchronous command, do not execute it again.
+      browserSession.rememberCommand(command.id,{ok:false,error:'Command expired'});
       try { result = {ok:true,...await executePlayerCommand(command)}; }
       catch (error) { result = {ok:false,error:MusicI18n.source(error.message)}; }
       commandResults.set(command.id,result);
+      browserSession.rememberCommand(command.id,result);
       if (commandResults.size > 100) commandResults.delete(commandResults.keys().next().value);
     }
-    await api('control-ack',{clientId,id:command.id,...result});
+    await api('control-ack',{clientId:targetId,id:command.id,...result});
     // Confirmed exports no longer need a full queue snapshot in the retry cache.
     commandResults.set(command.id,{ok:result.ok,error:result.error});
   } catch {} // Retrying the acknowledgement does not execute the command again.

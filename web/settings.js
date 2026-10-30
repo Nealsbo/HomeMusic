@@ -16,9 +16,27 @@ function applyTheme(value) {
   document.documentElement.style.colorScheme = theme === 'midnight' ? 'dark' : 'light';
   $('themeSelect').value = theme;
   store('theme', theme);
+  globalThis.expandedPlayer?.refresh();
 }
 applyTheme(stored('theme', 'forest'));
 $('themeSelect').onchange = e => applyTheme(e.target.value);
+
+for (const prefix of ['player','expanded']) {
+  $(prefix + 'BackgroundSetting').onchange = event => playerAppearance.set({background:event.target.value});
+  $(prefix + 'IntensitySetting').oninput = event => playerAppearance.set({intensity:Number(event.target.value)});
+  $(prefix + 'AnimationSetting').onchange = event => playerAppearance.set({animation:event.target.checked});
+}
+playerAppearance.subscribe(value => {
+  for (const prefix of ['player','expanded']) {
+    $(prefix + 'BackgroundSetting').value = value.background;
+    $(prefix + 'IntensitySetting').value = value.intensity;
+    $(prefix + 'IntensitySetting').disabled = value.background === 'none';
+    $(prefix + 'IntensitySetting').setAttribute('aria-valuetext',value.intensity + '%');
+    $(prefix + 'IntensityValue').textContent = value.intensity + '%';
+    $(prefix + 'AnimationSetting').checked = value.animation;
+    $(prefix + 'ReducedMotionNote').hidden = !value.reducedMotion;
+  }
+});
 
 options($('languageSetting'), MusicI18n.languages.map(item => [item.code, item.name]), MusicI18n.language);
 $('languageSetting').value = MusicI18n.language;
@@ -41,6 +59,7 @@ MusicI18n.onChange = async () => {
   if (view === 'operations') await loadOperations();
   if (view === 'stats') await updateStats();
   if ($('devicesDialog').open) await refreshDevices();
+  globalThis.expandedPlayer?.refresh();
 };
 
 $('settingsForm').onsubmit = handle(async e => { e.preventDefault(); const device = await api('device',{id:deviceId,name:$('deviceName').value}); deviceName = device.name; store('device',{id:deviceId,name:deviceName}); await api('settings',{title:$('serverTitle').value,defaultVolume:Number($('defaultVolume').value)}); await refresh(); reportPlayback(); toast(tr("Settings saved")); });

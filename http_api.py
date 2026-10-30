@@ -150,8 +150,9 @@ class Handler(BaseHTTPRequestHandler):
                     for row in rows:
                         lines.extend([f"#EXTINF:-1,{row['artist']} - {row['title']}", row['path']])
                 return self.reply(200, ('\n'.join(lines) + '\n').encode('utf-8'), 'audio/x-mpegurl', head)
-            assets = {'/': 'index.html', '/style.css': 'style.css',
-                      **{f'/{name}.js': f'{name}.js' for name in ('i18n','bootstrap','operations','health','devices','audio-wave','visualizer','queue','listen-session','catalog','core','settings','library','views','collection','player','history','app')}}
+            assets = {'/': 'index.html', '/style.css': 'style.css', '/expanded-player.css': 'expanded-player.css', '/cd-scene.mjs': 'cd-scene.mjs',
+                      **{f'/{name}.js': f'{name}.js' for name in ('cd-view','audio-analysis','effects-view','player-appearance','album-view','player-bridge','player-views','expanded-player','client-session','i18n','bootstrap','operations','health','devices','audio-wave','visualizer','queue','listen-session','catalog','core','settings','library','views','collection','player','history','app')},
+                      **{f'/vendor/three-r180/{name}': f'vendor/three-r180/{name}' for name in ('three.module.min.js','three.core.min.js','LICENSE','manifest.json')}}
             if re.fullmatch(r'/locales/[a-zA-Z0-9_-]+\.json', path):
                 return self.send_file(WEB / path.lstrip('/'), head)
             if path not in assets:
@@ -185,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.range_error(size)
                 status = 206
             self.send_response(status)
-            types = {'.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8',
+            types = {'.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.css': 'text/css; charset=utf-8',
                      '.html': 'text/html; charset=utf-8', '.jpg': 'image/jpeg'}
             self.send_header('Content-Type', types.get(path.suffix.lower()) or
                              MEDIA_TYPES.get(path.suffix.lower(), 'application/octet-stream'))

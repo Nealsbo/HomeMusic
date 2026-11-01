@@ -14,7 +14,8 @@ function audioGraph(audio = {paused:false,ended:false,src:'/media/a',currentTime
   return {get audio() { return audio; },context,analyser,source,links,counts,createContext() { counts.contexts++; return context; }};
 }
 function drawingContext() {
-  return {rects:[],points:[],strokes:0,
+  return {rects:[],points:[],images:[],strokes:0,
+    drawImage(canvas,x,y) { this.images.push({canvas,x,y,alpha:this.globalAlpha,composition:this.globalCompositeOperation}); },
     clearRect() { this.rects = []; this.points = []; },
     fillRect(...values) { this.rects.push(values); },beginPath() { this.points = []; },
     moveTo(...values) { this.points.push(values); },lineTo(...values) { this.points.push(values); },stroke() { this.strokes++; }};

@@ -1,9 +1,12 @@
 /* Canvas presets consume shared analysis data, never an audio element or queue. */
 (function(root) {
+  const library = typeof module !== 'undefined' && module.exports ? require('./visualization-presets.js') : root.MusicVisualizationPresets;
+  const presets = [{id:'spectrum',label:'Spectrum',description:'Audio-reactive spectrum'},
+    {id:'waveform',label:'Waveform',description:'Audio waveform'},...(library?.presets || [])];
   function normalizeEffects(value) {
     value = value && typeof value === 'object' ? value : {};
     return {
-      preset:['spectrum','waveform'].includes(value.preset) ? value.preset : 'spectrum',
+      preset:presets.some(preset => preset.id === value.preset) ? value.preset : 'spectrum',
       intensity:typeof value.intensity === 'number' && Number.isFinite(value.intensity) ? Math.round(Math.max(0,Math.min(100,value.intensity))) : 60,
       enabled:typeof value.enabled === 'boolean' ? value.enabled : true
     };
@@ -21,6 +24,9 @@
       let saved;
       try { saved = JSON.parse(this.storage?.getItem('expandedPlayerEffects')); } catch {}
       this.value = normalizeEffects(saved);
+      this.renderer = library?.create(this.value.preset);
+      this.elapsed = 0;
+      this.transition = null;
       this.appearance = {motionEnabled:true,reducedMotion:false};
       this.active = false; this.failed = false; this.snapshot = null; this.timer = null;
       this.syncing = false; this.drawing = false; this.unlockAttempted = false; this.lastFrame = null;
@@ -36,9 +42,10 @@
       this.controls = this.element('div','effects-controls');
       const presetLabel = this.element('label',''), intensityLabel = this.element('label','');
       this.presetText = this.element('span',''); this.presetSelect = this.element('select','');
-      this.spectrumOption = this.element('option',''); this.spectrumOption.value = 'spectrum';
-      this.waveformOption = this.element('option',''); this.waveformOption.value = 'waveform';
-      this.presetSelect.append(this.spectrumOption,this.waveformOption);
+      this.presetOptions = presets.map(preset => {
+        const option = this.element('option',''); option.value = preset.id; return option;
+      });
+      this.presetSelect.append(...this.presetOptions);
       presetLabel.append(this.presetText,this.presetSelect);
       this.intensityText = this.element('span',''); this.intensity = this.element('input','');
       this.intensity.type = 'range'; this.intensity.min = '0'; this.intensity.max = '100'; this.intensity.step = '1';
@@ -63,16 +70,25 @@
       this.document.addEventListener?.('visibilitychange',this.onVisibility);
       this.refreshLabels(true);
     }
+    mountSettings(container) {
+      container.append(this.controls); return true;
+    }
+    focusSettings() { this.presetSelect.focus(); return true; }
     set(patch) {
-      this.value = normalizeEffects({...this.value,...patch});
+      const previous = this.value.preset;
+      const next = normalizeEffects({...this.value,...patch});
+      if (previous !== next.preset) this.captureTransition();
+      this.value = next;
+      if (previous !== this.value.preset) this.renderer = library?.create(this.value.preset);
+      this.renderer?.reset();
       try { this.storage?.setItem('expandedPlayerEffects',JSON.stringify(this.value)); } catch {}
-      this.levels.fill(0); this.unlockAttempted = false;
+      this.unlockAttempted = false;
       this.refreshLabels(true); this.sync();
     }
     refreshLabels(syncControls = false) {
       const text = (element, value) => { if (element.textContent !== value) element.textContent = value; };
       text(this.presetText,this.translate('Visualization preset'));
-      text(this.spectrumOption,this.translate('Spectrum')); text(this.waveformOption,this.translate('Waveform'));
+      this.presetOptions.forEach((option,index) => text(option,this.translate(presets[index].label)));
       text(this.intensityText,this.translate('Effect intensity') + ' · ' + this.value.intensity + '%');
       text(this.enableText,this.translate('Enable visualization'));
       text(this.start,this.translate('Start visualization'));
@@ -102,7 +118,7 @@
         const wanted = this.wanted(); this.consumer?.setActive(wanted);
         this.start.hidden = !wanted || this.consumer.status !== 'gesture';
         if (this.animating()) {
-          this.setStatus(this.value.preset === 'spectrum' ? 'Audio-reactive spectrum' : 'Audio waveform');
+          this.setStatus(presets.find(preset => preset.id === this.value.preset).description);
           if (this.timer === null && !this.drawing) this.tick();
           return;
         }
@@ -121,7 +137,8 @@
     }
     stopRendering() {
       if (this.timer !== null) this.cancel(this.timer);
-      this.timer = null; this.lastFrame = null; this.levels.fill(0);
+      this.timer = null; this.lastFrame = null; this.elapsed = 0; this.levels.fill(0); this.renderer?.reset();
+      this.clearTransition();
       if (this.context && !this.failed) {
         try { this.draw(false); } catch { this.failed = true; this.consumer?.setActive(false); }
       }
@@ -136,6 +153,7 @@
         }
         const now = this.now(), elapsed = this.lastFrame === null ? 1000 / 30 : Math.max(0,Math.min(250,now - this.lastFrame));
         this.lastFrame = now;
+        this.elapsed = elapsed;
         let power = 0;
         for (const value of this.samples) power += ((value - 128) / 128) ** 2;
         const amplitude = Math.min(1,Math.sqrt(power / this.samples.length) * 3);
@@ -156,9 +174,43 @@
       }
       finally { this.drawing = false; }
     }
+    clearTransition() {
+      if (this.transition) this.transition.canvas.width = this.transition.canvas.height = 0;
+      this.transition = null;
+    }
+    captureTransition() {
+      if (!this.animating() || typeof this.context.drawImage !== 'function') { this.clearTransition(); return; }
+      try {
+        const canvas = this.transition?.canvas || this.element('canvas','');
+        canvas.width = this.canvas.width; canvas.height = this.canvas.height;
+        const context = canvas.getContext('2d');
+        context.globalAlpha = 1; context.globalCompositeOperation = 'source-over';
+        context.drawImage(this.canvas,0,0);
+        this.transition = {canvas,started:this.now()};
+      } catch { this.clearTransition(); }
+    }
     draw(active) {
+      this.drawPreset(active);
+      if (!active || !this.transition) return;
+      const progress = Math.max(0,Math.min(1,(this.now() - this.transition.started) / 300));
+      if (progress >= 1) { this.clearTransition(); return; }
+      const blend = progress * progress * (3 - 2 * progress);
+      // Weighted premultiplied addition also crossfades transparent presets.
+      try {
+        this.context.globalCompositeOperation = 'destination-in'; this.context.globalAlpha = blend;
+        this.context.fillStyle = '#000000'; this.context.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.context.globalCompositeOperation = 'lighter'; this.context.globalAlpha = 1 - blend;
+        this.context.drawImage(this.transition.canvas,0,0);
+      } finally { this.context.globalAlpha = 1; this.context.globalCompositeOperation = 'source-over'; }
+    }
+    drawPreset(active) {
       const context = this.context, width = this.canvas.width, height = this.canvas.height;
       context.clearRect(0,0,width,height); context.fillStyle = this.color; context.strokeStyle = this.color;
+      if (this.renderer) {
+        this.renderer.draw(context,{width,height,active,levels:this.levels,samples:this.samples,
+          intensity:this.value.intensity,elapsed:this.elapsed});
+        return;
+      }
       context.globalAlpha = active ? .85 : .25;
       if (this.value.preset === 'spectrum') {
         const step = width / this.levels.length;
@@ -183,6 +235,7 @@
       this.active = false; this.stopRendering(); this.unsubscribe?.(); this.consumer?.dispose();
       this.document.removeEventListener?.('visibilitychange',this.onVisibility);
       this.presetSelect.onchange = null; this.intensity.oninput = null; this.enable.onchange = null; this.start.onclick = null;
+      this.controls.remove?.();
       this.container?.classList.remove('effects-stage'); this.container?.replaceChildren(); this.container = null; this.consumer = null; this.snapshot = null;
       this.root = null; this.context = null; this.canvas = null;
     }

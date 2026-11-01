@@ -62,7 +62,7 @@ class MusicServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers['Content-Type'], 'text/javascript; charset=utf-8')
         self.assertIn(b'MusicClientSession', body)
-        for path, mime in [('/cd-view.js','text/javascript'), ('/cd-scene.mjs','text/javascript'),
+        for path, mime in [('/layout.js','text/javascript'), ('/layout.css','text/css'), ('/visualization-presets.js','text/javascript'), ('/cd-view.js','text/javascript'), ('/cd-scene.mjs','text/javascript'),
                            ('/vendor/three-r180/three.module.min.js','text/javascript'),
                            ('/vendor/three-r180/three.core.min.js','text/javascript'),
                            ('/vendor/three-r180/manifest.json','application/json'),

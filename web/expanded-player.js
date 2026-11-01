@@ -7,6 +7,28 @@
   let mode = tabs.some(tab => tab.mode === saved) && playerViews.has(saved) ? saved : 'album';
   let opened = false, closing = false, closeTimer = null, unsubscribe = null, currentView = null;
   let lastSnapshot = null;
+  const settings = $('expandedAppearancePanel'), settingsSlot = $('expandedSceneSettings');
+  const narrow = window.matchMedia?.('(max-width: 960px)');
+  function updateSettingsLayout() {
+    const visible = !settings.hidden;
+    dialog.dataset.settingsOpen = String(visible);
+    $('expandedPlayerStage').inert = visible && !!narrow?.matches;
+    $('expandedSettingsBackdrop').hidden = !visible || !narrow?.matches;
+  }
+  function setSettingsOpen(value,focus = true) {
+    if (value && (!opened || closing)) return;
+    settings.hidden = !value;
+    if (value) settings.scrollTop = 0;
+    $('expandedAppearanceToggle').setAttribute('aria-expanded',String(value));
+    updateSettingsLayout();
+    if (focus) {
+      if (value && !$('expandedSceneSettingsSection').hidden && currentView?.focusSettings?.() === true) return;
+      (value ? $('expandedBackgroundSetting') : $('expandedAppearanceToggle')).focus();
+    }
+  }
+  function updateSettingsTitle() {
+    $('expandedSceneSettingsTitle').textContent = tr(mode === 'cd' ? 'CD controls' : 'Visualization controls');
+  }
 
   function updateBackgroundMotion() {
     const value = playerAppearance.get();
@@ -38,6 +60,7 @@
     try { currentView?.dispose(); }
     catch (error) { console.error('Player view cleanup failed',error); }
     currentView = null;
+    settingsSlot.replaceChildren(); $('expandedSceneSettingsSection').hidden = true;
   }
   function render(snapshot) {
     lastSnapshot = snapshot;
@@ -59,6 +82,9 @@
     try {
       currentView = playerViews.create(mode,{analysis:playbackBridge.analysis,artworkFactory:() => playerViews.create('album')});
       currentView.mount($('expandedPlayerStage'));
+      const hasSettings = currentView.mountSettings?.(settingsSlot) === true;
+      $('expandedSceneSettingsSection').hidden = !hasSettings; updateSettingsTitle();
+      settings.scrollTop = 0;
       currentView.setAppearance?.(playerAppearance.get());
       currentView.setActive(opened && !closing);
     } catch (error) {
@@ -87,8 +113,7 @@
     if (dialog.open) dialog.close();
     document.documentElement.classList.remove('expanded-player-open');
     $('expandPlayer').setAttribute('aria-expanded','false');
-    $('expandedAppearancePanel').hidden = true;
-    $('expandedAppearanceToggle').setAttribute('aria-expanded','false');
+    setSettingsOpen(false,false);
     notifyVisibility();
     $('expandPlayer').focus();
   }
@@ -129,13 +154,9 @@
   }
   $('expandPlayer').onclick = handle(open);
   $('collapsePlayer').onclick = () => close();
-  $('expandedAppearanceToggle').onclick = () => {
-    const panel = $('expandedAppearancePanel');
-    panel.hidden = !panel.hidden;
-    $('expandedAppearanceToggle').setAttribute('aria-expanded',String(!panel.hidden));
-    if (!panel.hidden) $('expandedBackgroundSetting').focus();
-  };
-  dialog.oncancel = event => { event.preventDefault(); close(); };
+  $('expandedAppearanceToggle').onclick = () => setSettingsOpen(settings.hidden);
+  $('closeExpandedAppearance').onclick = $('expandedSettingsBackdrop').onclick = () => setSettingsOpen(false);
+  dialog.oncancel = event => { event.preventDefault(); if (!settings.hidden) setSettingsOpen(false); else close(); };
   dialog.onclose = () => { if (!dialog.open) finishClose(); };
   dialog.ontransitionend = event => { if (closing && event.target === dialog && event.propertyName === 'transform') finishClose(); };
   for (const tab of tabs) tab.button.onclick = () => setMode(tab.mode);
@@ -150,11 +171,13 @@
     else return;
     event.preventDefault(); setMode(tabs[next].mode); tabs[next].button.focus();
   };
-  root.expandedPlayer = Object.freeze({open,close,setMode,
-    refresh() { updateTabs(); if (opened && !closing) render(playbackBridge.getState()); },
+  root.expandedPlayer = Object.freeze({open,close,setMode,setSettingsOpen,
+    refresh() { updateTabs(); updateSettingsTitle(); if (opened && !closing) render(playbackBridge.getState()); },
     get isOpen() { return opened; }, get mode() { return mode; }
   });
   updateTabs();
+  setSettingsOpen(false,false); updateSettingsTitle();
+  narrow?.addEventListener?.('change',updateSettingsLayout);
   playerAppearance.subscribe(applyAppearance);
   document.addEventListener?.('visibilitychange',updateBackgroundMotion);
 })(globalThis);

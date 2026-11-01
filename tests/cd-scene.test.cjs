@@ -32,7 +32,7 @@ test('vendored Three.js assets match the pinned version, checksums and MIT licen
 test('the real Three.js scene contains a hinged clear case, disc hole and independent holder', async () => {
   const f = await fixture(), scene = f.renderer.scene;
   const lid = scene.getObjectByName('case-lid'), disc = scene.getObjectByName('disc');
-  assert.equal(scene.getObjectByName('clear-lid').material.transmission,.92);
+  assert.equal(scene.getObjectByName('clear-lid').material.transmission,.95);
   assert.equal(scene.getObjectByName('disc-surface').geometry.parameters.innerRadius,.18);
   assert.equal(scene.getObjectsByProperty('name','hub-clip').length,12);
   assert.notEqual(scene.getObjectByName('disc-holder').parent,disc);
@@ -86,4 +86,35 @@ test('disposal releases actual geometries and materials and ignores a late textu
   f.model.dispose(); f.model.dispose(); late();
   assert.equal(disposed.size,resources.size); assert.equal(image.onload,null); assert.equal(image.onerror,null);
   assert.equal(f.renderer.disposed,1); assert.equal(f.renderer.lost,1);
+});
+
+test('plastic, artwork and lighting adapt to dark and light themes without reloading textures', async () => {
+  const f = await fixture(), scene = f.renderer.scene;
+  const lid = scene.getObjectByName('clear-lid'), edge = scene.getObjectByName('case-spine');
+  assert.equal(lid.castShadow,false); assert.equal(edge.castShadow,false);
+  assert.ok(edge.material.transmission < lid.material.transmission);
+  const highlights = scene.getObjectsByProperty('name','plastic-highlight'); assert.equal(highlights.length,2);
+  assert.equal(highlights[0].material,highlights[1].material);
+  const paper = scene.getObjectByName('album-insert').material, print = scene.getObjectByName('disc-label').material;
+  const insertBounds = new f.THREE.Box3().setFromObject(scene.getObjectByName('album-insert'));
+  const plasticBounds = new f.THREE.Box3().setFromObject(lid);
+  assert.ok(insertBounds.max.z < plasticBounds.min.z);
+  for (const object of [scene.getObjectByName('disc'),scene.getObjectByName('disc-holder'),...scene.getObjectsByProperty('name','hub-clip')]) {
+    assert.ok(new f.THREE.Box3().setFromObject(object).max.z < insertBounds.min.z,object.name + ' intersects the closed insert');
+  }
+  assert.ok(paper.isMeshBasicMaterial && print.isMeshBasicMaterial);
+  assert.equal(paper.toneMapped,false); assert.equal(print.toneMapped,false);
+  f.model.setArtwork('/covers/' + 'a'.repeat(64) + '.jpg');
+  const image = f.images[0]; image.naturalWidth = image.naturalHeight = 512; image.onload();
+  const texture = paper.map, lights = scene.children.filter(object => object.isLight);
+  assert.equal(lights.filter(light => light.castShadow).length,1);
+  assert.ok(lights.find(light => light.castShadow).shadow.mapSize.width <= 512);
+  const floor = scene.getObjectByName('floor');
+  f.model.setPalette({surface:'#17231e',accent:'#24754b'});
+  const darkOpacity = floor.material.opacity, darkEdges = highlights[0].material.color.clone();
+  f.model.setPalette({surface:'#ffffff',accent:'#74b9e8'});
+  assert.ok(floor.material.opacity < darkOpacity); assert.equal(darkEdges.equals(highlights[0].material.color),false);
+  assert.equal(paper.map,texture); assert.equal(print.map,texture); assert.equal(f.images.length,1);
+  assert.equal(f.renderer.shadowMap.needsUpdate,true); assert.equal(f.renderer.transmissionResolutionScale,.5);
+  f.model.dispose();
 });

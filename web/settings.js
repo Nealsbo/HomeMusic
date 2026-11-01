@@ -62,4 +62,23 @@ MusicI18n.onChange = async () => {
   globalThis.expandedPlayer?.refresh();
 };
 
-$('settingsForm').onsubmit = handle(async e => { e.preventDefault(); const device = await api('device',{id:deviceId,name:$('deviceName').value}); deviceName = device.name; store('device',{id:deviceId,name:deviceName}); await api('settings',{title:$('serverTitle').value,defaultVolume:Number($('defaultVolume').value)}); await refresh(); reportPlayback(); toast(tr("Settings saved")); });
+$('deviceSettingsForm').onsubmit = handle(async event => {
+  event.preventDefault(); const button = $('saveDeviceSettings'); if (button.disabled) return;
+  button.disabled = true;
+  try {
+    const device = await api('device',{id:deviceId,name:$('deviceName').value});
+    deviceName = device.name; $('deviceName').value = deviceName;
+    store('device',{id:deviceId,name:deviceName}); reportPlayback(); toast(tr('Device name saved'));
+  } finally { button.disabled = false; }
+});
+$('settingsForm').onsubmit = handle(async event => {
+  event.preventDefault(); const button = $('saveServerSettings'); if (button.disabled) return;
+  button.disabled = true;
+  try {
+    await api('settings',{title:$('serverTitle').value,defaultVolume:Number($('defaultVolume').value)});
+    const updated = await api('state'); state.settings = updated.settings;
+    $('serverTitle').value = state.settings.title || tr('Quiet Wave');
+    $('defaultVolume').value = state.settings.defaultVolume ?? .75;
+    renderLibraryMessages(); toast(tr('Server settings saved'));
+  } finally { button.disabled = false; }
+});

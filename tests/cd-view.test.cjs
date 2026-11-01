@@ -6,13 +6,13 @@ const {cdFixture} = require('./cd-fixture.cjs');
 test('disc motion accelerates, coasts to a stop and bounds manual rotation', () => {
   const motion = new CDMotion();
   for (let i=0; i<30; i++) motion.step(1/30,true,true);
-  assert.ok(motion.speed > 2); const angle = motion.spin;
-  motion.step(1/30,false,true); assert.ok(motion.speed > 0 && motion.speed < 2.1); assert.notEqual(motion.spin, angle);
+  assert.ok(Math.abs(motion.speed - 1.05 * (1 - Math.exp(-5))) < .000001); const angle = motion.spin;
+  motion.step(1/30,false,true); assert.ok(motion.speed > 0 && motion.speed < 1.05); assert.notEqual(motion.spin, angle);
   for (let i=0; i<90; i++) motion.step(1/30,false,true);
   assert.equal(motion.speed,0); assert.equal(motion.step(1/30,false,true),false);
   motion.open = true; motion.step(1/30,true,false);
   assert.equal(motion.lid,-Math.PI * .82); assert.equal(motion.speed,0);
-  motion.rotate(100,-100); assert.equal(motion.yaw,1.5); assert.equal(motion.pitch,-.8);
+  motion.rotate(100,-100); assert.equal(motion.yaw,Math.PI * 35 / 180); assert.equal(motion.pitch,-Math.PI * 25 / 180);
 });
 
 test('static, weak-device and unsupported configurations never import Three.js', async () => {
@@ -35,6 +35,21 @@ test('a paused scene renders on demand, not on repeated playback reports', async
   assert.equal(f.models[0].art.length,1);
 });
 
+test('viewport size changes redraw the existing scene and release the observer on disposal', async () => {
+  let resized, observed, disconnected = 0;
+  class Observer {
+    constructor(callback) { resized = callback; }
+    observe(element) { observed = element; }
+    disconnect() { disconnected++; }
+  }
+  const f = cdFixture({ResizeObserver:Observer}); await f.start(); f.frame();
+  assert.equal(observed,f.view.viewport); const sizes = f.models[0].sizes.length;
+  resized(); assert.equal(f.models[0].sizes.length,sizes + 1); assert.equal(f.tasks.size,1);
+  f.frame(); assert.equal(f.counts.models,1); assert.equal(f.tasks.size,0);
+  f.visible(false); resized(); assert.equal(f.models[0].sizes.length,sizes + 1); assert.equal(f.tasks.size,0);
+  f.view.dispose(); assert.equal(disconnected,1);
+});
+
 test('lid, drag and keyboard interactions work without closing the view', async () => {
   const f = cdFixture(); await f.start(); f.frame();
   f.view.setAppearance({motionEnabled:false}); f.frame();
@@ -49,6 +64,60 @@ test('lid, drag and keyboard interactions work without closing the view', async 
   canvas.onkeydown({key:'Home',preventDefault(){prevented = true;}}); f.frame();
   assert.equal(prevented,true); assert.equal(f.models[0].poses.at(-1).yaw,-.28);
   assert.equal(f.view.active,true);
+});
+
+test('hover follows absolute pointer position smoothly within modest tilt limits and returns at rest', async () => {
+  const f = cdFixture(); await f.start(); f.frame();
+  const canvas = f.view.canvas, original = f.view.motion.yaw;
+  canvas.onpointermove({pointerType:'mouse',clientX:900,clientY:410});
+  assert.equal(f.view.motion.yaw,original);
+  f.frame(); assert.ok(f.view.motion.yaw > original && f.view.motion.yaw < Math.PI * 35 / 180);
+  for (let i = 0; i < 60 && f.tasks.size; i++) f.frame();
+  assert.equal(f.view.motion.yaw,Math.PI * 35 / 180); assert.equal(f.view.motion.pitch,Math.PI * 25 / 180);
+  assert.equal(f.tasks.size,0);
+  for (let i = 0; i < 10; i++) canvas.onpointermove({pointerType:'mouse',clientX:900,clientY:410});
+  f.frame(); assert.equal(f.tasks.size,0); assert.equal(f.view.motion.yaw,Math.PI * 35 / 180);
+  canvas.onpointermove({pointerType:'mouse',clientX:-1000,clientY:-1000});
+  for (let i = 0; i < 60 && f.tasks.size; i++) f.frame();
+  assert.equal(f.view.motion.yaw,-Math.PI * 35 / 180); assert.equal(f.view.motion.pitch,-Math.PI * 25 / 180);
+  canvas.onpointerleave();
+  for (let i = 0; i < 60 && f.tasks.size; i++) f.frame();
+  assert.equal(f.view.motion.yaw,-.28); assert.equal(f.view.motion.pitch,-.14); assert.equal(f.tasks.size,0);
+  f.view.dispose(); assert.equal(canvas.onpointerleave,null);
+});
+
+test('click and tap toggle a short lid animation while drags and canceled gestures do not', async () => {
+  const f = cdFixture(); await f.start(); f.frame();
+  const canvas = f.view.canvas;
+  const event = (pointerType,x = 500,y = 200) => ({pointerType,pointerId:1,button:0,clientX:x,clientY:y,preventDefault(){}});
+  canvas.onpointerdown(event('mouse')); canvas.onpointerup(event('mouse'));
+  assert.equal(f.view.motion.open,true); assert.equal(f.view.motion.lid,0);
+  f.frame(); assert.ok(f.view.motion.lid < 0 && f.view.motion.lid > -Math.PI * .82);
+  for (let i = 0; i < 20 && f.tasks.size; i++) f.frame();
+  assert.equal(f.view.motion.lid,-Math.PI * .82); assert.equal(f.tasks.size,0);
+  assert.equal(canvas.attributes['aria-pressed'],'true');
+  canvas.onpointerdown(event('touch')); canvas.onpointerup(event('touch'));
+  assert.equal(f.view.motion.open,false);
+  canvas.onpointerdown(event('touch')); canvas.onpointermove(event('touch',540,220)); canvas.onpointerup(event('touch',540,220));
+  assert.equal(f.view.motion.open,false); assert.notEqual(f.view.motion.yaw,-.28);
+  canvas.onpointerdown(event('mouse')); canvas.onpointercancel(event('mouse'));
+  assert.equal(f.view.motion.open,false);
+  canvas.onpointerdown(event('mouse')); canvas.onlostpointercapture(event('mouse')); canvas.onpointerup(event('mouse'));
+  assert.equal(f.view.motion.open,false);
+  canvas.onkeydown({key:'Enter',preventDefault(){}}); assert.equal(f.view.motion.open,true);
+  f.view.setAppearance({motionEnabled:false}); f.frame(); assert.equal(f.tasks.size,0);
+  canvas.onkeydown({key:' ',preventDefault(){}}); f.frame(); assert.equal(f.view.motion.lid,0);
+  assert.equal(f.view.active,true); f.view.dispose();
+});
+
+test('moving a pressed mouse is not a lid click, even after returning to its start', async () => {
+  const f = cdFixture(); await f.start(); f.frame(); const canvas = f.view.canvas;
+  const event = x => ({pointerType:'mouse',pointerId:1,button:0,clientX:x,clientY:200,preventDefault(){}});
+  canvas.onpointerdown(event(500)); canvas.onpointermove(event(550)); canvas.onpointermove(event(500)); canvas.onpointerup(event(500));
+  assert.equal(f.view.motion.open,false);
+  canvas.onpointerdown(event(500)); canvas.onpointerup(event(600)); assert.equal(f.view.motion.open,false);
+  f.visible(false); canvas.onpointermove(event(900)); assert.equal(f.tasks.size,0);
+  f.view.dispose();
 });
 
 test('playback and lid animations use at most one bounded timer and stop when hidden', async () => {

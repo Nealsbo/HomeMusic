@@ -1,20 +1,30 @@
 /* CD presentation controller. No audio element, queue, analyser, or server API. */
 (function(root) {
   const clamp = (value,min,max) => Math.max(min,Math.min(max,value));
+  const yawLimit = Math.PI * 35 / 180, pitchLimit = Math.PI * 25 / 180;
   class CDMotion {
-    constructor() { this.yaw = -.28; this.pitch = -.14; this.lid = 0; this.spin = 0; this.speed = 0; this.open = false; }
-    rotate(x,y) { this.yaw = clamp(this.yaw + x,-1.5,1.5); this.pitch = clamp(this.pitch + y,-.8,.8); }
-    reset() { this.yaw = -.28; this.pitch = -.14; }
+    constructor() { this.reset(); this.lid = 0; this.spin = 0; this.speed = 0; this.open = false; }
+    rotate(x,y) {
+      this.yaw = this.targetYaw = clamp(this.yaw + x,-yawLimit,yawLimit);
+      this.pitch = this.targetPitch = clamp(this.pitch + y,-pitchLimit,pitchLimit);
+    }
+    aim(x,y) { this.targetYaw = clamp(x,-1,1) * yawLimit; this.targetPitch = clamp(y,-1,1) * pitchLimit; }
+    rest() { this.targetYaw = -.28; this.targetPitch = -.14; }
+    reset() { this.yaw = this.targetYaw = -.28; this.pitch = this.targetPitch = -.14; }
     step(seconds, playing, animate) {
       const target = this.open ? -Math.PI * .82 : 0;
-      if (!animate) { this.lid = target; this.speed = 0; return false; }
+      if (!animate) { this.lid = target; this.speed = 0; this.yaw = this.targetYaw; this.pitch = this.targetPitch; return false; }
       seconds = clamp(seconds,0,.1);
-      this.lid += (target - this.lid) * (1 - Math.exp(-seconds * 10));
+      for (const [key,targetKey] of [['yaw','targetYaw'],['pitch','targetPitch']]) {
+        this[key] += (this[targetKey] - this[key]) * (1 - Math.exp(-seconds * 12));
+        if (Math.abs(this[targetKey] - this[key]) < .001) this[key] = this[targetKey];
+      }
+      this.lid += (target - this.lid) * (1 - Math.exp(-seconds * 14));
       if (Math.abs(target - this.lid) < .001) this.lid = target;
-      this.speed += ((playing ? 2.1 : 0) - this.speed) * (1 - Math.exp(-seconds * 5));
+      this.speed += ((playing ? 1.05 : 0) - this.speed) * (1 - Math.exp(-seconds * 5));
       if (!playing && this.speed < .005) this.speed = 0;
       this.spin = (this.spin - this.speed * seconds) % (Math.PI * 2);
-      return this.lid !== target || this.speed > 0 || playing;
+      return this.lid !== target || this.yaw !== this.targetYaw || this.pitch !== this.targetPitch || this.speed > 0 || playing;
     }
   }
   class CDPlayerView {
@@ -39,6 +49,7 @@
       this.schedule = options.schedule || ((fn, delay) => setTimeout(fn,delay));
       this.cancel = options.cancel || (id => clearTimeout(id));
       this.now = options.now || (() => performance.now());
+      this.ResizeObserver = options.ResizeObserver || root.ResizeObserver;
       try { this.storage = options.storage || root.localStorage; } catch {}
       let saved;
       try { saved = JSON.parse(this.storage?.getItem('expandedPlayerCD')); } catch {}
@@ -72,7 +83,7 @@
       this.retry = this.element('button','secondary'); this.retry.type = 'button'; this.retry.hidden = true;
       this.root.append(this.controls,this.viewport,this.status,this.artworkLabel,this.retry);
       container.replaceChildren(this.root); container.classList.add('cd-stage');
-      this.lidButton.onclick = () => { this.motion.open = !this.motion.open; this.refreshLabels(); this.requestRender(); };
+      this.lidButton.onclick = () => this.toggleLid();
       this.left.onclick = () => { this.motion.rotate(-.18,0); this.requestRender(); };
       this.right.onclick = () => { this.motion.rotate(.18,0); this.requestRender(); };
       this.reset.onclick = () => { this.motion.reset(); this.requestRender(); };
@@ -80,8 +91,16 @@
       this.retry.onclick = () => this.setQuality('3d');
       this.document.addEventListener?.('visibilitychange',this.onVisibility);
       this.window?.addEventListener?.('resize',this.onResize);
+      if (this.ResizeObserver) {
+        this.resizeObserver = new this.ResizeObserver(this.onResize);
+        this.resizeObserver.observe(this.viewport);
+      }
       this.refreshLabels(true);
     }
+    mountSettings(container) {
+      container.append(this.controls); return true;
+    }
+    focusSettings() { (this.lidButton.disabled ? this.select : this.lidButton).focus(); return true; }
     visible() { return !!(this.container && this.active && !this.document.hidden); }
     setQuality(value) {
       this.quality = ['auto','3d','static'].includes(value) ? value : 'auto';
@@ -101,7 +120,8 @@
     }
     detachCanvas() {
       if (!this.canvas) return;
-      this.canvas.onpointerdown = this.canvas.onpointermove = this.canvas.onpointerup = this.canvas.onpointercancel = this.canvas.onkeydown = null;
+      this.canvas.onpointerdown = this.canvas.onpointermove = this.canvas.onpointerup = this.canvas.onpointercancel =
+        this.canvas.onpointerleave = this.canvas.onlostpointercapture = this.canvas.onkeydown = null;
       this.canvas.removeEventListener?.('webglcontextlost',this.onContextLost);
       this.canvas.remove(); this.canvas = null; this.drag = null;
     }
@@ -159,26 +179,49 @@
         } else this.release(job);
       });
     }
+    toggleLid() {
+      if (!this.model || !this.visible()) return;
+      this.motion.open = !this.motion.open; this.refreshLabels(); this.requestRender();
+    }
     bindCanvas() {
       this.onContextLost = event => { event.preventDefault(); this.showFallback('WebGL context was lost. Showing static artwork.'); };
       this.canvas.addEventListener('webglcontextlost',this.onContextLost);
       this.canvas.onpointerdown = event => {
         if (!this.model || !this.visible() || (event.button !== undefined && event.button !== 0)) return;
-        event.preventDefault(); this.canvas.focus(); this.drag = {id:event.pointerId,x:event.clientX,y:event.clientY};
+        event.preventDefault(); this.canvas.focus();
+        this.drag = {id:event.pointerId,x:event.clientX,y:event.clientY,startX:event.clientX,startY:event.clientY,moved:false};
         try { this.canvas.setPointerCapture?.(event.pointerId); } catch {}
       };
       this.canvas.onpointermove = event => {
-        if (!this.drag || this.drag.id !== event.pointerId || !this.visible()) return;
-        this.motion.rotate((event.clientX - this.drag.x) * .008,(event.clientY - this.drag.y) * .006);
-        this.drag.x = event.clientX; this.drag.y = event.clientY; this.requestRender();
+        if (!this.model || !this.visible() || (this.drag && this.drag.id !== event.pointerId)) return;
+        if (!this.drag && event.pointerType === 'touch') return;
+        if (this.drag) {
+          this.drag.moved ||= Math.hypot(event.clientX - this.drag.startX,event.clientY - this.drag.startY) > 6;
+          if (event.pointerType !== 'mouse') this.motion.rotate((event.clientX - this.drag.x) * .008,(event.clientY - this.drag.y) * .006);
+          this.drag.x = event.clientX; this.drag.y = event.clientY;
+        }
+        if (event.pointerType === 'mouse' || (!this.drag && event.pointerType !== 'touch')) {
+          const rect = this.canvas.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) this.motion.aim((event.clientX - rect.left) / rect.width * 2 - 1,(event.clientY - rect.top) / rect.height * 2 - 1);
+        }
+        this.requestRender();
       };
-      this.canvas.onpointerup = this.canvas.onpointercancel = event => {
+      const release = (event,activate) => {
         if (this.drag?.id !== event.pointerId) return;
-        try { this.canvas.releasePointerCapture?.(event.pointerId); } catch {} this.drag = null;
+        const drag = this.drag; this.drag = null;
+        try { this.canvas.releasePointerCapture?.(event.pointerId); } catch {}
+        const distance = Number.isFinite(event.clientX) && Number.isFinite(event.clientY) ? Math.hypot(event.clientX - drag.startX,event.clientY - drag.startY) : 0;
+        if (activate && !drag.moved && distance <= 6) this.toggleLid();
+      };
+      this.canvas.onpointerup = event => release(event,true);
+      this.canvas.onpointercancel = this.canvas.onlostpointercapture = event => release(event,false);
+      this.canvas.onpointerleave = () => {
+        if (!this.drag && this.model && this.visible()) { this.motion.rest(); this.requestRender(); }
       };
       this.canvas.onkeydown = event => {
         const actions = {ArrowLeft:() => this.motion.rotate(-.15,0),ArrowRight:() => this.motion.rotate(.15,0),
-          ArrowUp:() => this.motion.rotate(0,-.12),ArrowDown:() => this.motion.rotate(0,.12),Home:() => this.motion.reset()};
+          ArrowUp:() => this.motion.rotate(0,-.12),ArrowDown:() => this.motion.rotate(0,.12),Home:() => this.motion.reset(),
+          Enter:() => this.toggleLid(),' ':() => this.toggleLid()};
         if (!actions[event.key] || !this.model || !this.visible()) return;
         event.preventDefault(); actions[event.key](); this.requestRender();
       };
@@ -190,9 +233,10 @@
       text(this.left,'Rotate left'); text(this.right,'Rotate right'); text(this.reset,'Reset view'); text(this.qualityText,'CD view quality');
       ['Automatic','3D scene','Static artwork'].forEach((key,index) => text(this.qualityOptions[index],key));
       if (syncControls) this.select.value = this.quality;
-      this.canvas?.setAttribute('role','img'); this.canvas?.setAttribute('aria-label',this.translate('Interactive CD case. Drag or use arrow keys to rotate.'));
+      this.canvas?.setAttribute('role','button'); this.canvas?.setAttribute('aria-pressed',String(this.motion.open));
+      this.canvas?.setAttribute('aria-label',this.translate('Interactive CD case. Move the pointer to tilt. Click or press Enter to open or close.'));
       for (const button of [this.lidButton,this.left,this.right,this.reset]) button.disabled = !this.model;
-      text(this.status,this.reason || 'Drag to rotate. Use arrow keys or the rotation buttons.');
+      text(this.status,this.reason || 'Move the pointer to tilt. Click or tap to open or close. Drag on touch screens; arrow keys also rotate.');
       const key = {empty:'No album artwork',loading:'Loading artwork…',failed:'Artwork unavailable'}[this.artworkStatus];
       this.artworkLabel.textContent = key ? this.translate(key) : '';
       text(this.retry,'Try 3D'); this.retry.hidden = !this.fallback || this.quality === 'static';
@@ -243,10 +287,12 @@
       else { this.ensureScene(); this.fallback?.setActive(this.visible()); this.syncModel(); this.requestRender(); }
     }
     dispose() {
+      this.resizeObserver?.disconnect();
       this.active = false; this.clearGraphics(); this.clearFallback();
       this.document.removeEventListener?.('visibilitychange',this.onVisibility); this.window?.removeEventListener?.('resize',this.onResize);
       for (const button of [this.lidButton,this.left,this.right,this.reset,this.retry]) button.onclick = null;
       this.select.onchange = null;
+      this.controls.remove?.();
       this.container?.classList.remove('cd-stage'); this.container?.replaceChildren();
       this.container = null; this.snapshot = null; this.root = null; this.viewport = null;
     }

@@ -1,6 +1,6 @@
 const {CDPlayerView} = require('../web/cd-view.js');
 
-function cdFixture({quality,weak = false,supported = true,deferred = false,slow = 0,playing = false} = {}) {
+function cdFixture({quality,weak = false,supported = true,deferred = false,slow = 0,playing = false,ResizeObserver} = {}) {
   const tasks = new Map(), documentEvents = new Map(), windowEvents = new Map(), storage = new Map(), created = [], models = [], fallbacks = [];
   const counts = {contexts:0,imports:0,models:0,disposed:0,lost:0};
   let now = 0, next = 0, resolveModule, rejectModule;
@@ -18,6 +18,7 @@ function cdFixture({quality,weak = false,supported = true,deferred = false,slow 
     addEventListener(type,fn) { this.listeners.set(type,fn); }
     removeEventListener(type,fn) { if (this.listeners.get(type) === fn) this.listeners.delete(type); }
     focus() { document.activeElement = this; }
+    getBoundingClientRect() { return {left:100,top:50,width:800,height:360}; }
     setPointerCapture(id) { this.capture = id; }
     releasePointerCapture(id) { if (this.capture === id) this.capture = null; }
   }
@@ -35,7 +36,7 @@ function cdFixture({quality,weak = false,supported = true,deferred = false,slow 
     models.push(model); return model;
   }};
   const container = new Element('section');
-  const view = new CDPlayerView({document,window,translate:key => key,isWeakDevice:() => weak,
+  const view = new CDPlayerView({document,window,ResizeObserver,translate:key => key,isWeakDevice:() => weak,
     getPalette:() => palette,now:() => now,
     schedule:(fn,delay) => { tasks.set(++next,{fn,delay}); return next; },cancel:id => tasks.delete(id),
     storage:{getItem:key => storage.get(key),setItem:(key,value) => storage.set(key,value)},

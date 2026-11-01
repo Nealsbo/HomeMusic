@@ -15,7 +15,7 @@ const waveMessages = {
 const audioWave = new AudioWave(audio, {
   smoothing: 0.4, // 0 = No height smoothing at 0, current at 1, softer at 2; fractional values are supported.
   analysis:audioAnalysis,
-  hidden:() => !waveDrawing || document.hidden || $('wavePanel').hidden || !!globalThis.expandedPlayer?.isOpen,
+  hidden:() => !waveDrawing || document.hidden || $('wavePanel').hidden || !$('libraryWave').open || !!globalThis.expandedPlayer?.isOpen,
   reduced:() => !!reducedMotion?.matches,
   schedule:(callback,delay) => setTimeout(callback,delay), cancel:id => clearTimeout(id),
   status:state => { $('waveStatus').textContent = tr(waveMessages[state]); },

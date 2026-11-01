@@ -19,8 +19,9 @@ $('folderFilter').onchange = () => { selected.clear(); limit = 150; renderTracks
 $('loadMore').onclick = () => { limit += 150; renderTracks(); };
 $('selectAll').onchange = e => { visible.forEach(t => e.target.checked ? selected.add(t.id) : selected.delete(t.id)); renderTracks(); };
 $('tracks').onchange = e => { if (e.target.dataset.select) { e.target.checked ? selected.add(e.target.dataset.select) : selected.delete(e.target.dataset.select); renderSelection(); } };
-$('tracks').onclick = handle(async e => {
-  const b = e.target.closest('button'); if (!b) return;
+async function activateTrackButton(b) {
+  if (!b) return;
+  if (b.dataset.trackActions) return globalThis.appLayout?.openTrackActions(b.dataset.trackActions,b);
   if (b.dataset.favorite) return toggleFavorite(b.dataset.favorite);
   if (b.dataset.enqueueNext) return enqueue([b.dataset.enqueueNext],true);
   if (b.dataset.enqueueEnd) return enqueue([b.dataset.enqueueEnd]);
@@ -28,7 +29,8 @@ $('tracks').onclick = handle(async e => {
   const id = b.dataset.up || b.dataset.down;
   if (id) { const i = visible.findIndex(t => t.id === id), target = visible[i + (b.dataset.up ? -1 : 1)]; if (target) await reorder(id,target.id); }
   if (b.dataset.edit) { const t = trackMap.get(b.dataset.edit); editingTrackSnapshot = {...t}; $('editProvenance').textContent = t.metadata_overrides?.length ? (tr("Protected fields:") + " ") + t.metadata_overrides.join(', ') + ('. ' + tr("You can restore values from tags.")) : tr("Data was read from the file; manual edits will be preserved during scans."); for (const [key,value] of Object.entries({editId:t.id,editTitle:t.title,editArtist:t.artist,editAlbum:t.album,editAlbumArtist:t.album_artist || '',editGenre:t.genre || '',editYear:t.year || '',editTrackNumber:t.track_number || 0,editDiscNumber:t.disc_number || 0})) $(key).value = value; $('editTechnical').textContent = `${clock(t.duration || 0)} · ${t.codec || tr("unknown format")} · ${Math.round((t.bitrate || 0) / 1000)} ${tr("kbps ·")} ${t.sample_rate || 0} ${tr("Hz")}` + (t.metadata_error ? ' · ' + MusicI18n.message(t.metadata_error) : ''); $('editDialog').showModal(); }
-});
+}
+$('tracks').onclick = handle(event => activateTrackButton(event.target.closest('button')));
 $('tracks').ondragstart = e => { const row = e.target.closest('tr'); if (!row || !canReorderTracks() || e.target.closest('input,button')) { e.preventDefault(); return; } dragId = row.dataset.id; e.dataTransfer.setData('text/plain',dragId); e.dataTransfer.effectAllowed = 'move'; row.classList.add('dragging'); };
 $('tracks').ondragover = e => { const row = e.target.closest('tr'); if (row && dragId) { e.preventDefault(); document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target')); row.classList.add('drop-target'); } };
 $('tracks').ondrop = handle(async e => { e.preventDefault(); const row = e.target.closest('tr'); if (row && dragId) await reorder(dragId,row.dataset.id); dragId = null; });

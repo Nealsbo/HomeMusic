@@ -8,7 +8,7 @@ export function createCDScene(canvas, context, options = {}) {
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(38,1,.1,50);
   const assembly = new THREE.Group(); assembly.name = 'cd-case'; scene.add(assembly);
   const lid = new THREE.Group(); lid.name = 'case-lid'; lid.position.set(-1.46,0,.06); assembly.add(lid);
-  const disc = new THREE.Group(); disc.name = 'disc'; disc.position.set(.12,0,.16); assembly.add(disc);
+  const disc = new THREE.Group(); disc.name = 'disc'; disc.position.set(.12,0,.085); assembly.add(disc);
   const artMaterials = [];
   const fitPoints = [], bounds = new THREE.Box3(), center = new THREE.Vector3();
   for (const x of [-1.52,1.52]) for (const y of [-1.3,1.3]) for (const z of [-.12,.24]) fitPoints.push({point:new THREE.Vector3(x,y,z),object:assembly,world:new THREE.Vector3()});
@@ -17,7 +17,8 @@ export function createCDScene(canvas, context, options = {}) {
   const material = value => { materials.add(value); return value; };
   function mesh(parent, shape, surface, name, x=0, y=0, z=0) {
     const value = new THREE.Mesh(geometry(shape),surface); value.name = name; value.position.set(x,y,z);
-    value.castShadow = true; parent.add(value); return value;
+    // Transmissive plastic must not cast an opaque shadow over the artwork.
+    value.castShadow = !(surface.transmission > 0); parent.add(value); return value;
   }
   function box(parent, size, surface, name, x=0,y=0,z=0) {
     return mesh(parent,new THREE.BoxGeometry(...size),surface,name,x,y,z);
@@ -53,13 +54,22 @@ export function createCDScene(canvas, context, options = {}) {
     try { environment = generator.fromScene(room,.03,.1,30,{size:128}); scene.environment = environment.texture; }
     finally { generator.dispose(); temporaryGeometry.forEach(value => value.dispose()); temporaryMaterial.forEach(value => value.dispose()); }
   }
-  let glass, liner;
+  let glass, edgeGlass, liner, outline, floorMaterial, ambient, keyLight, fillLight;
   function setPalette(value) {
     if (disposed) return;
     const palette = {surface:value?.surface || '#ffffff',accent:value?.accent || '#24754b'};
     const key = JSON.stringify(palette); if (key === paletteKey) return; paletteKey = key;
-    glass.color.set(palette.surface).lerp(new THREE.Color(0xffffff),.92);
-    liner.color.set(palette.surface).lerp(new THREE.Color(0x59616e),.2);
+    const surface = new THREE.Color(palette.surface);
+    const dark = surface.r * .2126 + surface.g * .7152 + surface.b * .0722 < .28;
+    glass.color.copy(surface).lerp(new THREE.Color(0xffffff),.97);
+    edgeGlass.color.copy(surface).lerp(new THREE.Color(0xd9e5ef),.88);
+    liner.color.set(dark ? 0x6e7b8b : 0xc5ced8).lerp(surface,.12);
+    outline.color.set(dark ? 0xd5ebff : 0x66849c); outline.opacity = dark ? .4 : .25;
+    ambient.intensity = dark ? 1.15 : 1.35;
+    keyLight.intensity = dark ? 2.25 : 2;
+    fillLight.color.set(palette.accent).lerp(new THREE.Color(0xffffff),.8);
+    floorMaterial.opacity = dark ? .25 : .14;
+    renderer.shadowMap.needsUpdate = true;
     const previous = defaultTexture; defaultTexture = proceduralArtwork(palette.accent);
     if (!coverTexture) applyTexture(defaultTexture);
     releaseTexture(previous);
@@ -127,44 +137,53 @@ export function createCDScene(canvas, context, options = {}) {
   try {
     renderer = options.rendererFactory ? options.rendererFactory(canvas,context) : new THREE.WebGLRenderer({canvas,context,alpha:true,antialias:false,powerPreference:'low-power'});
     renderer.setPixelRatio(Math.min(1.25,options.pixelRatio || 1)); renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1;
     renderer.transmissionResolutionScale = .5;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
     renderer.debug.onShaderError = () => { throw Error('CD shader compilation failed'); };
-    glass = material(new THREE.MeshPhysicalMaterial({color:0xffffff,roughness:.12,metalness:0,transmission:.92,thickness:.035,ior:1.49,envMapIntensity:1.6}));
-    liner = material(new THREE.MeshStandardMaterial({color:0xd3d7df,roughness:.65,metalness:.15}));
+    glass = material(new THREE.MeshPhysicalMaterial({color:0xffffff,roughness:.09,metalness:0,transmission:.95,thickness:.035,ior:1.49,envMapIntensity:1.1}));
+    edgeGlass = material(new THREE.MeshPhysicalMaterial({color:0xd9e5ef,roughness:.2,metalness:0,transmission:.65,thickness:.1,ior:1.49,envMapIntensity:1.2}));
+    outline = material(new THREE.LineBasicMaterial({color:0xd5ebff,transparent:true,opacity:.4,depthWrite:false,toneMapped:false}));
+    liner = material(new THREE.MeshStandardMaterial({color:0xc5ced8,roughness:.8,metalness:.03}));
     const black = material(new THREE.MeshStandardMaterial({color:0x343b46,roughness:.45}));
-    const silver = material(new THREE.MeshPhysicalMaterial({color:0xdde2ed,metalness:.9,roughness:.22,iridescence:.85,iridescenceThicknessRange:[100,400]}));
-    const paper = material(new THREE.MeshStandardMaterial({color:0xffffff,roughness:.8,side:THREE.DoubleSide}));
-    const print = material(new THREE.MeshStandardMaterial({color:0xffffff,roughness:.6,metalness:.08,side:THREE.DoubleSide}));
+    const silver = material(new THREE.MeshPhysicalMaterial({color:0xdde2ed,metalness:.9,roughness:.19,iridescence:.65,iridescenceThicknessRange:[100,350]}));
+    // Printed artwork keeps its original colors in every theme and light setup.
+    const paper = material(new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,toneMapped:false}));
+    const print = material(new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,toneMapped:false}));
     artMaterials.push(paper,print);
-    box(assembly,[2.9,2.56,.12],glass,'case-base',0,0,-.06);
+    const edgeHighlight = object => {
+      const lines = new THREE.LineSegments(geometry(new THREE.EdgesGeometry(object.geometry)),outline);
+      lines.name = 'plastic-highlight'; lines.renderOrder = 1; object.add(lines);
+    };
+    edgeHighlight(box(assembly,[2.9,2.56,.12],glass,'case-base',0,0,-.06));
     box(assembly,[2.63,2.42,.035],liner,'disc-tray',.115,0,.02);
-    box(assembly,[.22,2.54,.18],glass,'case-spine',-1.34,0,.025);
-    for (const y of [-1.26,1.26]) box(assembly,[2.9,.035,.22],glass,'case-edge',0,y,.015);
-    for (const x of [-1.43,1.43]) box(assembly,[.035,2.5,.22],glass,'case-edge',x,0,.015);
-    box(lid,[2.9,2.56,.045],glass,'clear-lid',1.46,0,.09);
-    mesh(lid,new THREE.PlaneGeometry(2.36,2.36),paper,'album-insert',1.58,0,.116);
-    for (const y of [-1.24,1.24]) box(lid,[2.9,.035,.13],glass,'lid-edge',1.46,y,.045);
-    for (const x of [.02,2.9]) box(lid,[.035,2.5,.13],glass,'lid-edge',x,0,.045);
-    const hinge = mesh(assembly,new THREE.CylinderGeometry(.038,.038,2.35,16),glass,'hinge',-1.46,0,.06);
+    box(assembly,[.22,2.54,.18],edgeGlass,'case-spine',-1.34,0,.025);
+    for (const y of [-1.26,1.26]) box(assembly,[2.9,.035,.22],edgeGlass,'case-edge',0,y,.015);
+    for (const x of [-1.43,1.43]) box(assembly,[.035,2.5,.22],edgeGlass,'case-edge',x,0,.015);
+    edgeHighlight(box(lid,[2.9,2.56,.045],glass,'clear-lid',1.46,0,.09));
+    mesh(lid,new THREE.PlaneGeometry(2.36,2.36),paper,'album-insert',1.58,0,.061);
+    for (const y of [-1.24,1.24]) box(lid,[2.9,.035,.13],edgeGlass,'lid-edge',1.46,y,.045);
+    for (const x of [.02,2.9]) box(lid,[.035,2.5,.13],edgeGlass,'lid-edge',x,0,.045);
+    const hinge = mesh(assembly,new THREE.CylinderGeometry(.038,.038,2.35,16),edgeGlass,'hinge',-1.46,0,.06);
     hinge.castShadow = false;
     mesh(disc,new THREE.RingGeometry(.18,1.12,96),silver,'disc-surface');
     mesh(disc,new THREE.RingGeometry(.24,1.035,96),print,'disc-label',0,0,.008);
     mesh(disc,new THREE.TorusGeometry(1.115,.012,6,96),silver,'disc-rim');
     mesh(disc,new THREE.RingGeometry(.15,.225,48),silver,'disc-hub-ring',0,0,.012);
-    const hub = mesh(assembly,new THREE.CylinderGeometry(.13,.16,.1,24),black,'disc-holder',.12,0,.12); hub.rotation.x = Math.PI / 2;
+    const hub = mesh(assembly,new THREE.CylinderGeometry(.13,.16,.1,24),black,'disc-holder',.12,0,.07); hub.rotation.x = Math.PI / 2;
     for (let i=0; i<12; i++) {
       const angle = i / 12 * Math.PI * 2;
-      const clip = box(assembly,[.025,.11,.055],black,'hub-clip',.12 + Math.cos(angle) * .12,Math.sin(angle) * .12,.175);
+      const clip = box(assembly,[.025,.11,.055],black,'hub-clip',.12 + Math.cos(angle) * .12,Math.sin(angle) * .12,.085);
       clip.rotation.z = angle - Math.PI / 2;
     }
-    scene.add(new THREE.HemisphereLight(0xffffff,0x637083,2));
-    const light = new THREE.DirectionalLight(0xffffff,3.5); light.position.set(-3,5,6); light.castShadow = true;
+    ambient = new THREE.HemisphereLight(0xffffff,0x637083,1.2); scene.add(ambient);
+    const light = keyLight = new THREE.DirectionalLight(0xffffff,2.25); light.position.set(-3,5,6); light.castShadow = true;
     light.shadow.mapSize.set(512,512); Object.assign(light.shadow.camera,{left:-5,right:5,top:5,bottom:-5,near:.5,far:20});
-    light.shadow.bias = -.002; scene.add(light);
-    const rim = new THREE.DirectionalLight(0xc9ddff,1.5); rim.position.set(4,1,-3); scene.add(rim);
-    const floor = mesh(scene,new THREE.PlaneGeometry(20,12),material(new THREE.ShadowMaterial({opacity:.18})),'floor',0,-1.44,0);
+    light.shadow.bias = -.0005; light.shadow.normalBias = .015; scene.add(light);
+    const rim = new THREE.DirectionalLight(0xc9ddff,1.1); rim.position.set(4,1,-3); scene.add(rim);
+    fillLight = new THREE.DirectionalLight(0xffffff,.55); fillLight.position.set(3,-1,4); scene.add(fillLight);
+    floorMaterial = material(new THREE.ShadowMaterial({opacity:.18}));
+    const floor = mesh(scene,new THREE.PlaneGeometry(20,12),floorMaterial,'floor',0,-1.44,0);
     floor.rotation.x = -Math.PI / 2; floor.castShadow = false; floor.receiveShadow = true;
     if (options.environment !== false) makeEnvironment();
     setPalette(options.palette); resize(800,360);

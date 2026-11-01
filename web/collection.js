@@ -21,6 +21,10 @@ function tableScopeInfo() {
 function updateHomeLayout() {
   const home = view === 'library' || view === 'favorites';
   const collection = home && !playlistId && homeMode === 'collection';
+  document.documentElement.dataset.home = String(home);
+  $('tableSearchBox').hidden = !home || collection;
+  $('collectionSearchBox').hidden = !collection;
+  $('libraryWave').hidden = !home;
   $('librarySummary').hidden = !home;
   $('wavePanel').hidden = !home;
   audioWave.sync();

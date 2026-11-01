@@ -51,7 +51,7 @@ const fixture = () => ({
   ],
   playlists:[{id:'p',name:'Mix',tracks:['c','a','b']}],folders:['','Jazz'],settings:{},storage:'/music',maxUploadMB:512
 });
-async function client({headStatus = 200, savedPlayer = null, listenFailures = 0, initialStorage = {}, initialSessionStorage = {}, controlTransport = null, healthTransport = null, operationTransport = null, reducedMotion = false, audioContextFactory = null, drawing = null} = {}) {
+async function client({headStatus = 200, savedPlayer = null, listenFailures = 0, initialStorage = {}, initialSessionStorage = {}, controlTransport = null, healthTransport = null, operationTransport = null, reducedMotion = false, audioContextFactory = null, drawing = null, narrowPlayer = false} = {}) {
   let data = fixture(); const elements = new Map(); const calls = [];
   let document;
   const get = id => { if (!elements.has(id)) elements.set(id,new Element(id)); const element = elements.get(id); element.ownerDocument = document; return element; };
@@ -60,6 +60,8 @@ async function client({headStatus = 200, savedPlayer = null, listenFailures = 0,
   audio.pause = () => { audio.paused = true; audio.emit('pause'); };
   let now = 0;
   const local = new Map(Object.entries(initialStorage));
+  // Audio-analysis scenarios keep the optional wave visible unless explicitly collapsed.
+  if (drawing && !local.has('libraryWaveOpen')) local.set('libraryWaveOpen','true');
   const session = new Map(Object.entries(initialSessionStorage));
   if (savedPlayer) local.set('player',JSON.stringify(savedPlayer));
   const connection = {lastChild:{textContent:''}};
@@ -69,13 +71,15 @@ async function client({headStatus = 200, savedPlayer = null, listenFailures = 0,
   const timeoutTasks = new Map();
   const motionListeners = new Set();
   const motionPreference = {matches:reducedMotion,addEventListener(name,fn) { motionListeners.add(fn); },removeEventListener(name,fn) { motionListeners.delete(fn); }};
+  const viewportListeners = new Set();
+  const playerViewport = {matches:narrowPlayer,addEventListener(name,fn) { viewportListeners.add(fn); },removeEventListener(name,fn) { viewportListeners.delete(fn); }};
   const sandbox = {
     document:{documentElement:{dataset:{},style:{},classList:get('documentElement').classList},getElementById:get,querySelectorAll:() => [],querySelector:s => s === '.connection' ? connection : null,hidden:false,
       createElement(tag) { const element = new Element(''); element.tagName = tag.toUpperCase(); element.ownerDocument = document; if (tag === 'canvas' && drawing) element.getContext = () => drawing; createdElements.push(element); return element; },
       addEventListener(name,fn) { if (!documentListeners.has(name)) documentListeners.set(name,[]); documentListeners.get(name).push(fn); },
       removeEventListener(name,fn) { documentListeners.set(name,(documentListeners.get(name) || []).filter(listener => listener !== fn)); },
       dispatchEvent(event) { for (const fn of documentListeners.get(event.type) || []) fn(event); }},
-    navigator:{},window:{addEventListener(){},matchMedia:() => motionPreference,AudioContext:audioContextFactory},
+    navigator:{},window:{addEventListener(){},matchMedia:query => query === '(max-width: 960px)' ? playerViewport : motionPreference,AudioContext:audioContextFactory},
     localStorage:{getItem:k => local.get(k),setItem:(k,v) => local.set(k,v),removeItem:k => local.delete(k),get length() { return local.size; },key:i => [...local.keys()][i]},
     sessionStorage:{getItem:k => session.get(k),setItem:(k,v) => session.set(k,v)},
     TextEncoder, URLSearchParams, Event, performance:{now:() => now},
@@ -106,6 +110,7 @@ async function client({headStatus = 200, savedPlayer = null, listenFailures = 0,
   };
   document = sandbox.document;
   get('compactPlayerHome').append(get('compactPlayer'));
+  get('sidebarHome').append(get('appSidebar'));
   if (drawing) { get('audioWave').getContext = () => drawing; get('audioWave').width = 720; get('audioWave').height = 192; }
   get('expandedAppearancePanel').hidden = true;
   const context = vm.createContext(sandbox);
@@ -118,6 +123,7 @@ async function client({headStatus = 200, savedPlayer = null, listenFailures = 0,
   await new Promise(resolve => setImmediate(resolve));
   const run = expression => vm.runInContext(expression,context);
   return {get,audio,run,calls,local,session,timers,createdElements,timeoutTasks,
+    setNarrowPlayer(value) { playerViewport.matches = value; for (const listener of viewportListeners) listener({matches:value}); },
     setReducedMotion(value) { motionPreference.matches = value; for (const listener of motionListeners) listener({matches:value}); },
     advanceTime:ms => { now += ms; },data:() => data};
 }
@@ -128,6 +134,56 @@ test('initial library includes nested folders and selects the first playlist des
   assert.equal(c.get('addPlaylist').value,'p');
   assert.equal(c.run('visible.length'),3);
   assert.equal(c.get('nowTitle').textContent,'Choose music');
+});
+
+test('navigation drawer and queue shortcut preserve the existing playback and DOM controls', async () => {
+  const c = await client(); await c.run("playTrack('a',['a','b'])");
+  c.audio.currentTime = 41; await new Promise(resolve => setImmediate(resolve));
+  const source = c.audio.src, loads = c.audio.loadCalls, listening = c.run('listeningSession');
+  const queue = c.run('JSON.stringify(queueModel.snapshot())'), sidebar = c.get('appSidebar');
+  const requests = c.calls.length;
+  c.get('navigationToggle').onclick();
+  assert.equal(c.get('navigationDialog').open,true); assert.equal(sidebar.parentNode,c.get('sidebarSlot'));
+  c.get('appMain').scrollTop = 250;
+  c.run("showView('settings')");
+  assert.equal(c.get('appMain').scrollTop,0);
+  assert.equal(c.get('navigationDialog').open,false); assert.equal(sidebar.parentNode,c.get('sidebarHome'));
+  c.run("showView('library'); appLayout.openNavigation()");
+  c.get('navigationDialog').onclose(); assert.equal(c.get('navigationDialog').open,true);
+  c.get('closeNavigation').onclick();
+  assert.equal(sidebar.parentNode,c.get('sidebarHome')); assert.equal(c.get('navigationToggle').attributes['aria-expanded'],'false');
+  c.get('queueShortcut').onclick(); assert.equal(c.get('queueDialog').open,true);
+  assert.equal(c.audio.src,source); assert.equal(c.audio.loadCalls,loads); assert.equal(c.audio.currentTime,41);
+  assert.equal(c.audio.paused,false); assert.equal(c.run('listeningSession'),listening);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'),queue); assert.equal(c.calls.length,requests);
+});
+
+test('collapsed wave starts no audio analysis and collapsing an active wave preserves audible routing', async () => {
+  const graph = audioGraph(null);
+  const c = await client({drawing:drawingContext(),initialStorage:{libraryWaveOpen:'false',waveMode:'"eco"'},audioContextFactory:function() { return graph.createContext(); }});
+  await c.run("playTrack('a',['a','b'])"); c.audio.emit('playing');
+  assert.equal(graph.counts.contexts,0); assert.equal(c.run('audioWave.timer'),null);
+  c.get('libraryWave').open = true; c.get('libraryWave').ontoggle();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(graph.counts.sources,1); assert.notEqual(c.run('audioWave.timer'),null);
+  c.get('libraryWave').open = false; c.get('libraryWave').ontoggle();
+  assert.equal(c.run('audioWave.timer'),null); assert.ok(graph.links.has(graph.context.destination));
+  assert.equal(graph.links.has(graph.analyser),false); assert.equal(graph.counts.badDisconnects,0);
+  assert.equal(c.local.get('libraryWaveOpen'),'false'); assert.equal(c.audio.paused,false);
+});
+
+test('table and collection searches follow the selected view and collapsed filters expose active criteria', async () => {
+  const c = await client();
+  assert.equal(c.get('tableSearchBox').hidden,false); assert.equal(c.get('collectionSearchBox').hidden,true);
+  c.get('folderFilter').value = 'Jazz'; c.get('sort').value = 'title'; c.run('renderTracks()');
+  assert.equal(c.get('activeFilters').hidden,false); assert.equal(c.get('activeFilters').textContent,'2');
+  c.run("setHomeMode('collection')");
+  assert.equal(c.get('tableSearchBox').hidden,true); assert.equal(c.get('collectionSearchBox').hidden,false);
+  c.run("showView('settings')");
+  assert.equal(c.get('collectionSearchBox').hidden,true); assert.equal(c.get('libraryWave').hidden,true);
+  assert.equal(c.run('document.documentElement.dataset.home'),'false');
+  c.run("showView('library'); setHomeMode('table')");
+  assert.equal(c.get('tableSearchBox').hidden,false); assert.equal(c.get('libraryWave').hidden,false);
 });
 
 test('search, exact folder filters and numeric/title sorting',async () => {
@@ -367,9 +423,69 @@ test('device identity survives page reload and its name is editable',async () =>
   const second = await client({initialStorage:{device:stored}});
   assert.equal(second.run('deviceId'),first.run('deviceId'));
   second.get('deviceName').value='Kitchen';
-  await second.get('settingsForm').onsubmit({preventDefault(){}});
+  await second.get('deviceSettingsForm').onsubmit({preventDefault(){}});
   assert.equal(JSON.parse(second.local.get('device')).name,'Kitchen');
   assert.equal(second.calls.find(r => r.action === 'device').body.name,'Kitchen');
+});
+
+test('device and server forms save independently and preserve the other draft and current audio', async () => {
+  const c = await client(); await c.run("playTrack('a',['a','b'])"); c.audio.currentTime = 41;
+  await new Promise(resolve => setImmediate(resolve));
+  const source = c.audio.src, loads = c.audio.loadCalls, queue = c.run('JSON.stringify(queueModel.snapshot())');
+  c.get('deviceName').value = 'Unsaved device draft';
+  c.get('serverTitle').value = 'Home stereo'; c.get('defaultVolume').value = '.25';
+  const first = c.calls.length;
+  await c.get('settingsForm').onsubmit({preventDefault(){}});
+  assert.equal(c.calls.slice(first).some(call => call.action === 'device'),false);
+  assert.equal(c.get('deviceName').value,'Unsaved device draft');
+  assert.equal(c.run('state.settings.title'),'Home stereo');
+  assert.equal(c.audio.volume,.75);
+  c.get('serverTitle').value = 'Unsaved server draft';
+  const second = c.calls.length;
+  await c.get('deviceSettingsForm').onsubmit({preventDefault(){}});
+  assert.equal(c.calls.slice(second).some(call => call.action === 'settings'),false);
+  assert.equal(c.get('serverTitle').value,'Unsaved server draft');
+  assert.equal(JSON.parse(c.local.get('device')).name,'Unsaved device draft');
+  assert.equal(c.get('saveDeviceSettings').disabled,false); assert.equal(c.get('saveServerSettings').disabled,false);
+  assert.equal(c.audio.src,source); assert.equal(c.audio.loadCalls,loads); assert.equal(c.audio.currentTime,41);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'),queue);
+});
+
+test('track action sheet reuses queue commands without replacing the playing entry', async () => {
+  const c = await client(); await c.run("playTrack('a',['a','b'])"); c.audio.currentTime = 41;
+  const entry = c.run('queueModel.currentEntryId'), source = c.audio.src;
+  const trigger = c.get('trackMenuTrigger'); trigger.dataset.trackActions = 'b';
+  await c.get('tracks').onclick({target:{closest:() => trigger}});
+  assert.equal(c.get('trackActionsDialog').open,true); assert.equal(c.get('trackActionsTitle').textContent,'Beta');
+  const button = c.get('trackActionNext');
+  await c.get('trackActionsList').onclick({target:{closest:() => button}});
+  assert.equal(c.get('trackActionsDialog').open,false);
+  assert.equal(c.run('queue.join()'),'a,b,b'); assert.equal(c.run('queueModel.currentEntryId'),entry);
+  assert.equal(c.audio.src,source); assert.equal(c.audio.currentTime,41); assert.equal(c.audio.paused,false);
+});
+
+test('track actions respect reorder eligibility and keyboard dismissal restores focus', async () => {
+  const c = await client(), origin = c.get('trackMenuTrigger');
+  c.run("appLayout.openTrackActions('a',document.getElementById('trackMenuTrigger'))");
+  assert.equal(c.get('trackActionUp').disabled,true); assert.equal(c.get('trackActionDown').disabled,false);
+  c.get('trackActionsDialog').onkeydown({key:'End',preventDefault(){}});
+  assert.equal(c.run('document.activeElement.id'),'trackActionEdit');
+  c.get('trackActionsDialog').oncancel({preventDefault(){}});
+  assert.equal(c.get('trackActionsDialog').open,false); assert.equal(c.run('document.activeElement.id'),origin.id);
+  c.get('sort').value = 'title'; c.run("renderTracks(); appLayout.openTrackActions('b',document.getElementById('trackMenuTrigger'))");
+  assert.equal(c.get('trackActionUp').disabled,true); assert.equal(c.get('trackActionDown').disabled,true);
+  c.get('closeTrackActions').onclick(); assert.equal(c.get('trackActionsDialog').open,false);
+  c.run("appLayout.openTrackActions('b',document.getElementById('trackMenuTrigger')); showView('settings')");
+  c.get('trackActionsDialog').onclose(); assert.equal(c.run('document.activeElement.id'),'pageTitle');
+});
+
+test('track information action opens the existing editor after dismissing the action sheet', async () => {
+  const c = await client(); await c.run("playTrack('a',['a','b'])"); c.audio.currentTime = 41;
+  c.run("appLayout.openTrackActions('a',document.getElementById('pageTitle'))");
+  await c.get('trackActionsList').onclick({target:{closest:() => c.get('trackActionEdit')}});
+  assert.equal(c.get('trackActionsDialog').open,false); assert.equal(c.get('editDialog').open,true);
+  assert.equal(c.get('editTitle').value,'Alpha'); assert.equal(c.get('editId').value,'a');
+  assert.equal(c.audio.currentTime,41); assert.equal(c.audio.src,'/media/a'); assert.equal(c.audio.paused,false);
 });
 
 
@@ -903,6 +1019,58 @@ test('expanded controls, remote commands and queue dialog keep working on the sa
   assert.equal(c.run('currentId'), 'b'); assert.equal(c.audio.paused, false);
 });
 
+test('shared appearance panel hosts current view controls without changing the audible graph or player', async () => {
+  const graph = audioGraph(null);
+  const c = await client({drawing:drawingContext(),audioContextFactory:function() { return graph.createContext(); }});
+  await c.run("playTrack('a',['a','b'])"); c.audio.emit('playing'); c.audio.currentTime = 41;
+  c.run("expandedPlayer.open(); expandedPlayer.setMode('effects')");
+  await new Promise(resolve => setImmediate(resolve));
+  const controls = c.createdElements.find(element => element.className === 'effects-controls');
+  assert.equal(controls.parentNode,c.get('expandedSceneSettings'));
+  assert.equal(c.get('expandedSceneSettingsSection').hidden,false);
+  const source = c.audio.src, loads = c.audio.loadCalls, queue = c.run('JSON.stringify(queueModel.snapshot())');
+  const listening = c.run('listeningSession'), requests = c.calls.length;
+  for (let i = 0; i < 3; i++) {
+    c.get('expandedAppearanceToggle').onclick();
+    assert.equal(c.run('document.activeElement'),controls.nodes[0].nodes[1]);
+    c.get('closeExpandedAppearance').onclick();
+    assert.equal(controls.parentNode,c.get('expandedSceneSettings'));
+    assert.equal(graph.counts.sources,1); assert.ok(graph.links.has(graph.context.destination));
+  }
+  c.run('expandedPlayer.setSettingsOpen(true)'); c.get('expandedAppearancePanel').scrollTop = 200;
+  c.run("expandedPlayer.setMode('cd')");
+  const cdControls = c.createdElements.find(element => element.className === 'cd-controls');
+  assert.equal(cdControls.parentNode,c.get('expandedSceneSettings')); assert.equal(controls.parentNode,null);
+  assert.equal(c.get('expandedAppearancePanel').hidden,false);
+  assert.equal(c.get('expandedAppearancePanel').scrollTop,0);
+  assert.equal(c.get('expandedSceneSettingsTitle').textContent,'CD controls');
+  c.run("expandedPlayer.setMode('album')");
+  assert.equal(c.get('expandedSceneSettingsSection').hidden,true); assert.equal(cdControls.parentNode,null);
+  assert.equal(c.get('expandedSceneSettings').nodes.length,0);
+  c.run('expandedPlayer.close(true)');
+  assert.equal(c.audio.src,source); assert.equal(c.audio.loadCalls,loads); assert.equal(c.audio.currentTime,41);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'),queue); assert.equal(c.run('listeningSession'),listening);
+  assert.equal(c.calls.length,requests); assert.equal(graph.counts.contexts,1); assert.equal(graph.counts.badDisconnects,0);
+});
+
+test('mobile appearance overlay leaves transport available and Escape closes the panel before the player', async () => {
+  const c = await client({narrowPlayer:true});
+  c.run('playerAppearance.set({animation:false}); expandedPlayer.open(); expandedPlayer.setSettingsOpen(true)');
+  assert.equal(c.get('expandedSettingsBackdrop').hidden,false); assert.equal(c.get('expandedPlayerStage').inert,true);
+  assert.notEqual(c.get('compactPlayer').inert,true);
+  c.setNarrowPlayer(false);
+  assert.equal(c.get('expandedPlayerStage').inert,false); assert.equal(c.get('expandedSettingsBackdrop').hidden,true);
+  c.setNarrowPlayer(true);
+  c.get('expandedPlayerDialog').oncancel({preventDefault(){}});
+  assert.equal(c.run('expandedPlayer.isOpen'),true); assert.equal(c.get('expandedAppearancePanel').hidden,true);
+  assert.equal(c.run('document.activeElement.id'),'expandedAppearanceToggle');
+  c.get('expandedAppearanceToggle').onclick(); c.get('expandedSettingsBackdrop').onclick();
+  assert.equal(c.get('expandedPlayerStage').inert,false);
+  c.get('expandedPlayerDialog').oncancel({preventDefault(){}});
+  assert.equal(c.run('expandedPlayer.isOpen'),false);
+  assert.equal(c.get('expandedSettingsBackdrop').hidden,true);
+});
+
 test('expanded player keyboard navigation persists mode and restores focus after collapse', async () => {
   const c = await client();
   c.run('expandedPlayer.open()');
@@ -1220,6 +1388,8 @@ test('CD scene interactions and lifecycle preserve the existing audio and queue'
     const controls = c.createdElements.filter(element => element.className === 'cd-controls').at(-1);
     controls.nodes[0].onclick(); controls.nodes[1].onclick(); controls.nodes[3].onclick();
     const canvas = c.createdElements.filter(element => element.className === 'cd-canvas').at(-1);
+    const click = {pointerType:'mouse',pointerId:1,button:0,clientX:500,clientY:200,preventDefault(){}};
+    canvas.onpointerdown(click); canvas.onpointerup(click);
     canvas.onkeydown({key:'ArrowRight',preventDefault(){}});
     c.advanceTime(34); c.run('cdFrame()');
     c.run("expandedPlayer.setMode('album'); expandedPlayer.setMode('cd')");

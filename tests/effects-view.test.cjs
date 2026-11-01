@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {EffectsPlayerView,normalizeEffects} = require('../web/effects-view.js');
 const {AudioAnalysis} = require('../web/audio-analysis.js');
 const {audioGraph,drawingContext} = require('./audio-fixture.cjs');
+const {presets} = require('../web/visualization-presets.js');
 
 function fixture({canvas = true, saved} = {}) {
   const graph = audioGraph(), drawing = drawingContext(), timers = new Map(), listeners = new Set(), storage = new Map();
@@ -121,4 +122,84 @@ test('playback updates do not reset a preset selection before the user commits i
   assert.equal(f.view.value.preset, 'spectrum');
   f.view.presetSelect.onchange({target:{value:'waveform'}});
   assert.equal(f.view.value.preset, 'waveform');
+});
+
+test('all classic presets share the analysis graph, persist selection and stop on every visibility boundary', async () => {
+  const f = fixture(); await f.start();
+  for (const preset of presets) {
+    f.view.set({preset:preset.id}); f.frame();
+    assert.equal(f.view.value.preset,preset.id); assert.equal(f.view.label.textContent,preset.description);
+    assert.equal(JSON.parse(f.storage.get('expandedPlayerEffects')).preset,preset.id);
+    assert.equal(f.timers.size,1); assert.equal(f.counts.sources,1); assert.equal(f.counts.contexts,1);
+    assert.ok(f.drawing.rects.some(rect => rect[2] === 960 && rect[3] === 360));
+    f.visibility(true); const reads = f.counts.reads;
+    f.update(); assert.equal(f.counts.reads,reads); assert.equal(f.timers.size,0);
+    f.visibility(false); assert.equal(f.timers.size,1);
+    f.view.setAppearance({motionEnabled:false,reducedMotion:true}); assert.equal(f.timers.size,0);
+    f.view.setAppearance({motionEnabled:true}); assert.equal(f.timers.size,1);
+    f.audio.paused = true; f.analysis.media('pause'); f.update(); assert.equal(f.timers.size,0);
+    f.audio.paused = false; f.analysis.media('playing'); f.update();
+    assert.ok(f.links.has(f.context.destination));
+  }
+  f.view.dispose(); assert.equal(f.timers.size,0); assert.equal(f.counts.badDisconnects,0);
+  assert.equal(f.audio.currentTime,42); assert.equal(f.audio.src,'/media/a');
+});
+
+test('saved classic selection restores and renderer failures leave the audible connection intact', async () => {
+  const f = fixture({saved:'{"preset":"radial-bloom","intensity":75}'});
+  assert.equal(f.view.presetSelect.value,'radial-bloom'); assert.equal(f.counts.contexts,0);
+  await f.start();
+  f.view.renderer.draw = () => { throw Error('renderer failed'); };
+  f.frame(); assert.equal(f.timers.size,0);
+  assert.equal(f.view.label.textContent,'Visualization is unavailable in this browser');
+  assert.ok(f.links.has(f.context.destination)); assert.equal(f.audio.paused,false);
+  assert.equal(f.counts.badDisconnects,0); f.view.dispose();
+});
+
+test('missing optional preset catalog falls back to the original presets without blocking playback', () => {
+  const fs = require('node:fs'), vm = require('node:vm');
+  const sandbox = {playerViews:{register() {}}};
+  vm.runInNewContext(fs.readFileSync('web/effects-view.js','utf8'),sandbox);
+  const view = new sandbox.EffectsPlayerView({storage:{getItem:() => '{"preset":"classic-bars"}'}});
+  assert.equal(view.value.preset,'spectrum'); assert.equal(view.renderer,undefined);
+});
+
+test('preset changes crossfade a frozen frame over 300 ms using the existing render timer', async () => {
+  const f = fixture(); await f.start(); f.view.set({preset:'classic-bars'});
+  const buffer = f.view.transition.canvas;
+  assert.equal(buffer.width,960); assert.equal(buffer.height,360); assert.equal(f.timers.size,1);
+  f.frame();
+  const overlays = () => f.drawing.images.filter(image => image.composition === 'lighter');
+  const first = overlays().at(-1).alpha;
+  assert.ok(first > .9 && first < 1);
+  for (let i = 0; i < 4; i++) f.frame();
+  assert.ok(overlays().at(-1).alpha < first && overlays().at(-1).alpha > 0);
+  assert.equal(f.drawing.globalAlpha,1); assert.equal(f.drawing.globalCompositeOperation,'source-over');
+  for (let i = 0; i < 5; i++) f.frame();
+  assert.equal(f.view.transition,null); assert.equal(buffer.width,0); assert.equal(buffer.height,0);
+  assert.equal(f.timers.size,1); assert.equal(f.counts.sources,1); assert.ok(f.links.has(f.context.destination));
+  f.view.dispose();
+});
+
+test('rapid preset changes retain a single snapshot and do not discard measured spectrum levels', async () => {
+  const f = fixture(); await f.start();
+  const levels = [...f.view.levels];
+  f.view.set({preset:'classic-bars'}); const buffer = f.view.transition.canvas;
+  for (const preset of ['waveform','radial-bloom','spectrum','neon-scope','ribbon-waves']) {
+    f.view.set({preset}); assert.equal(f.view.transition.canvas,buffer); assert.equal(f.timers.size,1);
+  }
+  assert.deepEqual([...f.view.levels],levels); f.frame();
+  assert.equal(f.counts.contexts,1); assert.equal(f.counts.sources,1);
+  f.view.dispose(); assert.equal(buffer.width,0); assert.equal(f.timers.size,0);
+});
+
+test('pause, visibility, disabled effects and reduced motion cancel crossfades without new loops', async () => {
+  for (const stop of [f => { f.audio.paused = true; f.analysis.media('pause'); f.update(); },
+    f => f.visibility(true),f => f.view.set({enabled:false}),f => f.view.setAppearance({motionEnabled:false,reducedMotion:true})]) {
+    const f = fixture(); await f.start(); f.view.set({preset:'classic-bars'});
+    const buffer = f.view.transition.canvas; stop(f);
+    assert.equal(f.view.transition,null); assert.equal(buffer.width,0); assert.equal(f.timers.size,0);
+    f.view.set({preset:'waveform'}); assert.equal(f.view.transition,null);
+    assert.equal(f.timers.size,0); assert.ok(f.links.has(f.context.destination)); f.view.dispose();
+  }
 });

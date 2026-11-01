@@ -38,7 +38,18 @@ $('tracks').ondragend = () => { dragId = null; document.querySelectorAll('.dragg
 $('moveButton').onclick = handle(async () => { await api('move',{tracks:[...selected],folder:$('moveFolder').value}); selected.clear(); await refresh(); toast(tr("Files moved")); });
 $('addButton').onclick = handle(async () => { const p = state.playlists.find(p => p.id === $('addPlaylist').value); if (!p) return; await api('playlistTracks',{id:p.id,tracks:[...new Set([...p.tracks,...selected])]}); selected.clear(); await refresh(); toast(tr("Added to playlist")); });
 $('removeButton').onclick = handle(async () => { const p = state.playlists.find(p => p.id === playlistId); await api('playlistTracks',{id:p.id,tracks:p.tracks.filter(id => !selected.has(id))}); selected.clear(); await refresh(); });
-$('newFolder').onclick = handle(async () => { const path = prompt(tr("New folder path, for example Jazz/Live")); if (!path?.trim()) return; await api('folder',{path:path.trim()}); await refresh(); });
+$('newFolder').onclick = () => { $('newFolderName').value = ''; $('newFolderDialog').showModal(); $('newFolderName').focus(); };
+$('newFolderForm').onsubmit = handle(async e => {
+  e.preventDefault();
+  const name = $('newFolderName').value.trim(), parent = $('newFolderParent').value;
+  if (!name) return;
+  if (name.startsWith('/') || name.includes('\\') || name.split('/').includes('..') || name.split('/')[0] === '@sources') throw new Error(tr('Enter a relative folder path without parent traversal.'));
+  $('createFolderSubmit').disabled = true;
+  try {
+    await api('folder', {path:(parent ? parent + '/' : '') + name});
+    $('newFolderDialog').close(); await refresh();
+  } finally { $('createFolderSubmit').disabled = false; }
+});
 $('folderGrid').onclick = e => { const b = e.target.closest('[data-folder-index]'); if (b) { setHomeMode('table',false); $('folderFilter').value = state.folders[Number(b.dataset.folderIndex)]; $('search').value = ''; showView('library'); } };
 $('scanButton').onclick = handle(async () => { $('scanButton').disabled = true; try { await api('scan',{}); await refresh(); toast(tr("Library updated")); } finally { $('scanButton').disabled = false; } });
 $('refresh').onclick = handle(async () => { if (view === 'operations') { await loadOperations(); toast(tr("Operation log updated")); return; } if (view === 'health') { await loadHealth(); toast(tr("Report updated")); return; } await api('scan', {}); await refresh(); if (view === 'stats') await updateStats(); if (view === 'history') await loadHistory(true); toast(tr("Data updated")); });

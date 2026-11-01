@@ -1,0 +1,21 @@
+:root[data-theme="midnight"] {
+  --bg: #101923;
+  --ink: #e6eef7;
+  --muted: #a1b2c8;
+  --soft-ink: #b9cee5;
+  --green: #74b9e8;
+  --line: #34465b;
+  --side: #0b1320;
+  --surface: #1b2939;
+  --soft: #213349;
+  --hover: #263b52;
+  --selected: #2a435b;
+  --side-ink: #e3f0ff;
+  --side-muted: #9fb5d1;
+  --side-active: #253d58;
+  --badge: #96c7ec;
+  --on-badge: #162d43;
+  --on-accent: #102638;
+  --danger: #ffaaa0;
+}
+:root[data-theme="midnight"] .mini-cover { background: var(--soft); }

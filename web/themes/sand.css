@@ -1,0 +1,19 @@
+:root[data-theme="sand"] {
+  --bg: #fcf6ed;
+  --ink: #44312b;
+  --muted: #8c7367;
+  --soft-ink: #725a4c;
+  --green: #9b5634;
+  --line: #e4d5c4;
+  --side: #392c29;
+  --surface: #fffcf7;
+  --soft: #f3e8d7;
+  --hover: #faf0e2;
+  --selected: #f2e2cd;
+  --side-ink: #f7e5d2;
+  --side-muted: #c8ae9b;
+  --side-active: #594036;
+  --badge: #e9be8c;
+  --on-badge: #50321f;
+  --danger: #a63737;
+}

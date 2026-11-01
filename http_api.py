@@ -8,6 +8,7 @@ import re
 import shutil
 import sqlite3
 import time
+import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit, parse_qs
@@ -82,6 +83,15 @@ class Handler(BaseHTTPRequestHandler):
             with self.library.lock:
                 self.library.requests += 1
             path = unquote(urlsplit(self.path).path)
+            if path == '/api/update-health':
+                return self.reply(200, {'instance': os.environ.get('HOMEMUSIC_INSTANCE', '')}, head=head)
+            if path == '/api/updates':
+                updates = getattr(self.server, 'updates', None)
+                return self.reply(200, updates.status() if updates else {'phase': 'unmanaged'}, head=head)
+            if path == '/api/server':
+                updates = getattr(self.server, 'updates', None)
+                return self.reply(200, updates.restart_status() if updates else
+                                  dict(restartSupported=False, instance='', busy=False), head=head)
             if path == '/api/state':
                 return self.reply(200, self.library.state(), head=head)
             if path == '/api/history':
@@ -151,7 +161,8 @@ class Handler(BaseHTTPRequestHandler):
                         lines.extend([f"#EXTINF:-1,{row['artist']} - {row['title']}", row['path']])
                 return self.reply(200, ('\n'.join(lines) + '\n').encode('utf-8'), 'audio/x-mpegurl', head)
             assets = {'/': 'index.html', '/style.css': 'style.css', '/layout.css': 'layout.css', '/expanded-player.css': 'expanded-player.css', '/cd-scene.mjs': 'cd-scene.mjs',
-                      **{f'/{name}.js': f'{name}.js' for name in ('layout','visualization-presets','cd-view','audio-analysis','effects-view','player-appearance','album-view','player-bridge','player-views','expanded-player','client-session','i18n','bootstrap','operations','health','devices','audio-wave','visualizer','queue','listen-session','catalog','core','settings','library','views','collection','player','history','app')},
+                      **{f'/themes/{name}.css': f'themes/{name}.css' for name in ('forest', 'midnight', 'sand')},
+                      **{f'/{name}.js': f'{name}.js' for name in ('server-control','updates','layout','visualization-presets','cd-view','audio-analysis','effects-view','player-appearance','album-view','player-bridge','player-views','expanded-player','client-session','i18n','bootstrap','operations','health','devices','audio-wave','visualizer','queue','listen-session','catalog','core','settings','library','views','collection','player','history','app')},
                       **{f'/vendor/three-r180/{name}': f'vendor/three-r180/{name}' for name in ('three.module.min.js','three.core.min.js','LICENSE','manifest.json')}}
             if re.fullmatch(r'/locales/[a-zA-Z0-9_-]+\.json', path):
                 return self.send_file(WEB / path.lstrip('/'), head)
@@ -244,6 +255,26 @@ class Handler(BaseHTTPRequestHandler):
             path = urlsplit(self.path).path
             if not path.startswith('/api/'):
                 raise ValueError('Unknown endpoint')
+            if path == '/api/server/restart':
+                updates = getattr(self.server, 'updates', None)
+                if not updates:
+                    return self.reply(409, {'error': 'Start the server with a restart-capable main.py launcher'})
+                if not updates.authorized(self.headers.get('Authorization')):
+                    return self.reply(403, {'error': 'Invalid server owner key'})
+                with self.library.lock:
+                    result = updates.request_restart()
+                try:
+                    self.reply(202, result)
+                finally:
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
+            if path.startswith('/api/updates/'):
+                updates = getattr(self.server, 'updates', None)
+                if not updates:
+                    return self.reply(409, {'error': 'Start the server using main.py to enable updates'})
+                if not updates.authorized(self.headers.get('Authorization')):
+                    return self.reply(403, {'error': 'Invalid update owner key'})
+                return self.reply(200, updates.start(path.removeprefix('/api/updates/')))
             result = self.library.action(path.removeprefix('/api/'), data)
             self.reply(200, result)
         except (ValueError, KeyError, TypeError, sqlite3.IntegrityError) as e:

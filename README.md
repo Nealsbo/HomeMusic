@@ -67,6 +67,22 @@ For persistent settings, copy [config.example.json](config.example.json) to
 override it. Relative paths are resolved from the project folder. All options:
 `python main.py --help` (use `python3` on Linux).
 
+Add music directories through `music_sources` in the server config. All sources
+share one library; see [STORAGE.md](STORAGE.md). Color schemes live in separate
+files under `web/themes/`; see [THEMES.md](THEMES.md).
+
+Restart and reload configuration from server settings or the TUI (`S`, then
+`y`, or `python tui.py --restart`). Requires the managed launcher and owner key;
+see [RESTARTING.md](RESTARTING.md).
+
+## Updates
+
+Settings → Updates checks published releases and installs them with a restart.
+Installation requires the owner key printed in the server console. Automatic
+checks run daily; installation is manual. Music and configuration are preserved,
+and failed startup restores the previous version and database.
+See [UPDATING.md](UPDATING.md) for release preparation and recovery details.
+
 ## Notes
 
 Audio plays in the connected device's browser. Codec support depends on that

@@ -9,6 +9,15 @@ import server
 
 
 class StartupTests(unittest.TestCase):
+    def test_additional_sources_are_passed_to_library_with_primary_cli_override(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / 'config.json'
+            sources = [dict(id='archive', path='Extra music', type='directory')]
+            config.write_text(json.dumps(dict(music_sources=sources)), encoding='utf-8')
+            library, _ = self.launch(['--config', str(config), '--music-dir', 'Primary'])
+            self.assertEqual(library.args[0], 'Primary')
+            self.assertEqual(library.kwargs['music_sources'], sources)
+
     def launch(self, args=()):
         with patch.object(server, 'Library') as library, patch.object(server, 'Server') as http, \
                 patch('builtins.print'), patch.object(launcher.os, 'chdir'):

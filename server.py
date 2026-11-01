@@ -1,6 +1,8 @@
 """Dependency-free music server entry point (Python 3.10+)."""
 import argparse
 import json
+import os
+from pathlib import Path
 
 from library import Library
 from http_api import Handler, Server  # Re-exported for integrations using server.py.
@@ -47,9 +49,24 @@ def main(argv=None, *, defaults=None, default_config=None):
         host = '127.0.0.1'
     port = args.port if args.port is not None else config.get('port', 8080)
     library = Library(root, args.database or config.get('database', './data/library.sqlite3'), limit,
-                      args.ffprobe or config.get('ffprobe'), args.ffmpeg or config.get('ffmpeg'))
+                      args.ffprobe or config.get('ffprobe'), args.ffmpeg or config.get('ffmpeg'),
+                      music_sources=config.get('music_sources'))
     server = Server((host, port), Handler)
     server.library, server.verbose = library, args.verbose
+    updates = None
+    if os.environ.get('HOMEMUSIC_CHILD') == '1':
+        from updater import UpdateManager, write_json
+        installation = Path(os.environ['HOMEMUSIC_ROOT'])
+        updates = UpdateManager(installation, Path(__file__).resolve().parent, library.database,
+                                config.get('updates_repository', 'Nealsbo/HomeMusic'), server.shutdown,
+                                startup_timeout=config.get('updates_startup_timeout', 90))
+        server.updates = updates
+        print(f'Server owner key: {updates.key}\nKeep this key private; it authorizes updates and server restarts.', flush=True)
+        updates.schedule(config.get('updates_auto_check', True) is True)
+        health_host = '127.0.0.1' if host in ('0.0.0.0', '') else host
+        write_json(installation / '.updates' / 'ready.json', {
+            'instance': os.environ['HOMEMUSIC_INSTANCE'], 'host': health_host,
+            'port': server.server_port, 'pid': os.getpid()})
     library.start_metadata_worker()
     print(f'Music storage: {library.root}\nWeb player: http://{host}:{server.server_port}', flush=True)
     try:
@@ -57,8 +74,17 @@ def main(argv=None, *, defaults=None, default_config=None):
     except KeyboardInterrupt:
         pass
     finally:
+        if updates:
+            updates.stop.set()
         server.server_close()
         library.close()
+    if updates and (updates.home / 'restart.json').is_file():
+        from updater import read_json
+        restart = read_json(updates.home / 'restart.json')
+        if restart and restart.get('instance') == os.environ.get('HOMEMUSIC_INSTANCE'):
+            raise SystemExit(76)
+    if updates and (updates.home / 'request.json').is_file():
+        raise SystemExit(75)
 
 
 if __name__ == '__main__':

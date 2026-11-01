@@ -154,3 +154,6 @@ html[data-home=false] .home-mode-switch { display:none; }
   .settings-group > .panel { padding:8px 16px 20px; }
   .track-actions-dialog { left:12px !important; top:auto !important; bottom:12px; width:calc(100% - 24px); max-height:80dvh; padding-bottom:max(12px,env(safe-area-inset-bottom)); }
 }
+.update-notes { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; max-height:18rem; overflow:auto; }
+.settings label.update-consent { display:flex; flex-direction:row; align-items:flex-start; gap:10px; }
+.settings .update-consent input[type=checkbox] { width:18px; height:18px; min-height:0; flex:0 0 18px; margin:2px 0 0; padding:0; }

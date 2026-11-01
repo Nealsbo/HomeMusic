@@ -17,7 +17,7 @@ class Element {
   }
   set innerHTML(html) {
     this.html = html;
-    if (['folderFilter','moveFolder','uploadFolder','addPlaylist','historyDevice','deviceTarget'].includes(this.id)) {
+    if (['folderFilter','moveFolder','uploadFolder','newFolderParent','addPlaylist','historyDevice','deviceTarget'].includes(this.id)) {
       this.options = [...html.matchAll(/<option value="([^"]*)">/g)].map(m => ({value:m[1]}));
       this._value = this.options[0]?.value ?? '';
     }
@@ -1417,4 +1417,23 @@ test('analysis failure in effects leaves playback controls and the audible conne
   await c.get('next').onclick(); assert.equal(c.run('currentId'), 'b'); assert.equal(c.audio.paused, false);
   assert.equal(graph.counts.sources, 1); assert.equal(graph.counts.badDisconnects, 0); assert.equal(graph.counts.closes, 0);
   c.run('expandedPlayer.close(true)');
+});
+
+
+test('named music sources label folders and status without changing playback', async () => {
+  const c = await client(); await c.run("playTrack('a',['a','b'])");
+  const source = c.audio.src, queue = c.run('JSON.stringify(queueModel.snapshot())');
+  c.data().sources = [{id:'primary',primary:true,folder:'',name:'Primary storage',path:'/music',available:true},
+    {id:'archive',folder:'@sources/archive',name:'Archive <disk>',path:'/archive',available:false}];
+  c.data().folders.push('@sources/archive','@sources/archive/Jazz');
+  await c.run('refresh()');
+  assert.equal(c.run("folderLabel('@sources/archive/Jazz')"), 'Archive <disk>/Jazz');
+  assert.match(c.get('folderFilter').innerHTML, /Archive &lt;disk&gt;/);
+  assert.match(c.get('storageSources').innerHTML, /Unavailable/);
+  assert.equal(c.audio.src, source);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'), queue);
+  c.get('newFolderParent').value = '@sources/archive';
+  c.get('newFolderName').value = 'New/Albums';
+  await c.get('newFolderForm').onsubmit({preventDefault(){}});
+  assert.equal(c.calls.findLast(call => call.action === 'folder').body.path, '@sources/archive/New/Albums');
 });

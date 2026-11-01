@@ -25,11 +25,13 @@ async function refresh() {
   document.querySelector('.connection').lastChild.textContent = (' ' + tr("Connected"));
 }
 function renderFolderOptions() {
-  const folders = state.folders.map(folder => [folder, folder || tr('Root folder')]);
+  const folders = state.folders.map(folder => [folder, folderLabel(folder)]);
   options($('folderFilter'), [['*', tr('All folders')], ...folders], '*');
-  for (const id of ['moveFolder', 'uploadFolder']) options($(id), folders);
+  for (const id of ['moveFolder', 'uploadFolder', 'newFolderParent']) options($(id), folders);
 }
 function renderLibraryMessages() {
+  const sources = $('storageSources');
+  if (sources) sources.innerHTML = (state.sources || []).map(source => `<p><strong>${escapeHTML(source.primary ? tr('Primary storage') : source.name)}</strong> · ${escapeHTML(tr(source.available ? 'Available' : 'Unavailable'))}<br><span class="muted">${escapeHTML(source.path)}</span></p>`).join('');
   $('brandName').textContent = state.settings.title || tr('Quiet Wave');
   document.title = (state.settings.title || tr('Quiet Wave')) + ' · ' + tr('Music');
   const metadata = state.metadata;

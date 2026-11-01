@@ -1,0 +1,21 @@
+/* Default palette and shared color roles. */
+:root {
+  --bg: #f7f8f4;
+  --ink: #202c26;
+  --muted: #7d867e;
+  --soft-ink: #53614e;
+  --green: #24754b;
+  --line: #e3e7df;
+  --side: #17231e;
+  --surface: #ffffff;
+  --soft: #eef1e7;
+  --hover: #f6f8f2;
+  --selected: #e9f2e1;
+  --side-ink: #e5f3dc;
+  --side-muted: #a8b7ac;
+  --side-active: #2d4235;
+  --badge: #bfd99e;
+  --on-badge: #203c27;
+  --on-accent: #ffffff;
+  --danger: #ab5550;
+}

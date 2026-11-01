@@ -8,6 +8,14 @@ import linux_setup as setup
 
 
 class LinuxSetupTests(unittest.TestCase):
+    def test_additional_sources_resolve_from_installation_without_creating_missing_disks(self):
+        path = self.root / 'config.json'
+        path.write_text(json.dumps(dict(music_dir='Music', music_sources=[
+            dict(id='archive', path='External music', name='Archive')])) , encoding='utf-8')
+        _, config, _ = self.prepare()
+        self.assertEqual(config['music_sources'][0]['path'], str(self.root / 'External music'))
+        self.assertFalse((self.root / 'External music').exists())
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.base=Path(self.temp.name)
         self.root=self.base/'Player with spaces';self.root.mkdir()

@@ -1,9 +1,25 @@
 ﻿import unittest
 from tui import clean, clip, render_status, keyboard_command, send_command
 from unittest.mock import patch
+import os
+import sys
+import tui
 
 
 class TerminalTests(unittest.TestCase):
+    def test_interactive_restart_requires_explicit_confirmation_without_any_player(self):
+        with patch.object(sys, 'argv', ['tui.py']), patch.object(sys.stdin, 'isatty', return_value=True), \
+                patch.object(sys.stdout, 'isatty', return_value=True), patch.dict(os.environ, TERM='xterm'), \
+                patch('tui.Terminal') as terminal, patch('tui.fetch_status', return_value={'clients':[]}), \
+                patch('tui.render_status', return_value='screen') as render, patch('tui.time.sleep'), \
+                patch('builtins.print'), patch('tui.restart_server') as restart:
+            terminal.return_value.__enter__.return_value.key.side_effect = ['S', 'n', 'S', 'y', 'q']
+            self.assertEqual(tui.main(), 0)
+            restart.assert_called_once()
+            notices = [call.args[-1] for call in render.call_args_list]
+            self.assertTrue(any('restart cancelled' in notice for notice in notices if notice))
+            self.assertTrue(any('Press y to confirm' in notice for notice in notices if notice))
+
     def test_untrusted_names_cannot_inject_terminal_control_sequences(self):
         self.assertEqual(clean('hello\x1b[2J\nworld\x07'), 'hello world ')
         self.assertNotIn('\x1b', clean('\x1b]0;title\x07'))

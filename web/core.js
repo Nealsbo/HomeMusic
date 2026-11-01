@@ -44,3 +44,8 @@ const favoriteBusy = new Set();
 let homeMode = stored('homeMode','table') === 'collection' ? 'collection' : 'table';
 let catalog = new MusicCatalog();
 let collectionRoute = {page:'overview'}, collectionLimit = 48, tableScope = null;
+
+function folderLabel(folder) {
+  const source = (state.sources || []).find(s => s.folder && (folder === s.folder || folder.startsWith(s.folder + '/')));
+  return source ? source.name + folder.slice(source.folder.length) : folder || tr('Root folder');
+}

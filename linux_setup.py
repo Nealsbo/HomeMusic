@@ -9,6 +9,8 @@ import sys
 import tempfile
 import uuid
 
+from storage import directory_sources
+
 ROOT = Path(__file__).resolve().parent
 
 
@@ -62,6 +64,15 @@ def prepare_config(args, root=ROOT, cwd=None):
     elif not config.get('music_dir'):
         raise ValueError('For the first installation, specify --music-dir /path/to/music')
     config['music_dir'] = str(absolute(config['music_dir'], root))
+    if 'music_sources' in config:
+        sources = config['music_sources']
+        if not isinstance(sources, list):
+            raise ValueError('music_sources must be a list')
+        for source in sources:
+            if not isinstance(source, dict):
+                raise ValueError('Music source must be an object')
+            source['path'] = str(absolute(source.get('path'), root))
+        directory_sources(config['music_dir'], sources)
     if args.database is not None:
         config['database'] = str(absolute(args.database, cwd))
     else:

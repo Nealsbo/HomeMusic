@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import sys
@@ -58,9 +59,12 @@ def fetch_status(url, timeout=3):
     return result
 
 
-def control_request(url, endpoint, data, timeout=3):
+def control_request(url, endpoint, data, timeout=3, owner_key=None):
+    headers = {'Content-Type': 'application/json'}
+    if owner_key is not None:
+        headers['Authorization'] = 'Bearer ' + owner_key
     request = Request(url.rstrip('/') + '/api/' + endpoint,
-                      data=json.dumps(data).encode(), headers={'Content-Type': 'application/json'})
+                      data=json.dumps(data).encode(), headers=headers)
     try:
         with urlopen(request, timeout=timeout) as response:
             return json.loads(response.read(65536))
@@ -70,6 +74,27 @@ def control_request(url, endpoint, data, timeout=3):
         except (ValueError, AttributeError):
             message = str(error)
         raise ValueError(message) from error
+
+
+def restart_server(url, key_file):
+    key = Path(key_file).read_text(encoding='utf-8').strip()
+    if not key:
+        raise ValueError('The server owner key file is empty')
+    return control_request(url, 'server/restart', {}, owner_key=key)
+
+
+def wait_for_restart(url, previous_instance, timeout):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urlopen(url.rstrip('/') + '/api/server', timeout=3) as response:
+                status = json.loads(response.read(65536))
+            if status.get('instance') and status['instance'] != previous_instance:
+                return
+        except (OSError, ValueError, HTTPError, URLError):
+            pass
+        time.sleep(.5)
+    raise ValueError('The server did not return in time. Check its console and configured URL.')
 
 
 def send_command(url, target, action, value=None, source=None):
@@ -98,7 +123,7 @@ def render_status(data, url, selected=0, width=100, height=32, error=None, notic
     if error:
         rows += ['NO CONNECTION: ' + clean(error), 'Showing the last received snapshot.' if data else 'Waiting for connection...']
     if not data:
-        return '\n'.join(clip(r, width) for r in (rows + ['', 'q: quit | r: refresh'])[:height])
+        return '\n'.join(clip(r, width) for r in (rows + ['', 'S: restart server | q: quit | r: refresh'])[:height])
     rows += [f"Library: {data['tracks']} tracks / {human_bytes(data['libraryBytes'])} | Streams: {data['streams']}",
              f"Uptime: {clock(data['uptime'])} | Transferred: {human_bytes(data['bytesSent'])}",
              'Storage: ' + data['storage'], '']
@@ -137,7 +162,7 @@ def render_status(data, url, selected=0, width=100, height=32, error=None, notic
         rows.append(f"  {p['name']} / {p['tracks']} tracks")
     if not data['playlists'] and remaining > 0:
         rows.append('  No playlists yet.')
-    rows = rows[:height - 2] + ['-' * width, 'q: quit | j/k: player | Space: play/pause | n/p: track | h/l: ±10s | +/-: volume | t: transfer']
+    rows = rows[:height - 2] + ['-' * width, 'S: restart server | q: quit | r: refresh | j/k: player | Space: play/pause | n/p: track | h/l: ±10s | +/-: volume | t: transfer']
     return '\n'.join(clip(r, width) for r in rows)
 
 
@@ -199,7 +224,11 @@ def main():
     parser.add_argument('--once', action='store_true', help='Print a snapshot without screen control')
     parser.add_argument('--json', action='store_true', help='Print one status snapshot as JSON')
     parser.add_argument('--target', help='Target browser clientId from --json')
-    parser.add_argument('--command', choices=['play','pause','next','previous','seek','volume','transfer'])
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument('--command', choices=['play','pause','next','previous','seek','volume','transfer'])
+    actions.add_argument('--restart', action='store_true', help='Restart the server and wait for a new process')
+    parser.add_argument('--owner-key-file', default=str(Path(__file__).resolve().parent / '.updates' / 'owner-key'),
+                        help='Server owner key file for restart; never passed as a command-line secret')
     parser.add_argument('--value', type=float, help='Position in seconds or volume from 0 to 1')
     parser.add_argument('--source', help='Source browser clientId for transfer')
     parser.add_argument('--wait', type=float, default=90, help='Command confirmation timeout, seconds')
@@ -211,6 +240,15 @@ def main():
         parser.error('--interval must be between 1 and 3600 seconds')
     if not 1 <= args.wait <= 300:
         parser.error('--wait must be between 1 and 300 seconds')
+    if args.restart:
+        try:
+            result = restart_server(args.url, args.owner_key_file)
+            wait_for_restart(args.url, result['instance'], args.wait)
+            print('Server restarted.')
+            return 0
+        except (OSError, ValueError, HTTPError, URLError) as error:
+            print('Failed: ' + clean(error), file=sys.stderr)
+            return 1
     if args.command:
         if not args.target:
             parser.error('--command requires --target (clientId from --json)')
@@ -239,6 +277,7 @@ def main():
         return 0
     snapshot, error, selected, next_fetch = None, None, 0, 0
     pending, notice, transfer_source = None, None, None
+    restart_confirmation = False
     try:
         with Terminal() as terminal:
             while True:
@@ -246,6 +285,23 @@ def main():
                 if key in ('q', 'Q', '\x03'):
                     break
                 redraw = key is not None
+                if restart_confirmation and key is not None:
+                    restart_confirmation = False
+                    if key in ('y', 'Y'):
+                        try:
+                            restart_server(args.url, args.owner_key_file)
+                            pending, transfer_source = None, None
+                            notice = 'Restart requested. Waiting for the server to reconnect.'
+                            next_fetch = 0
+                        except (OSError, ValueError, HTTPError, URLError) as exc:
+                            notice = 'Failed: ' + str(exc)
+                    else:
+                        notice = 'Server restart cancelled.'
+                    key = None
+                elif key == 'S':
+                    restart_confirmation = True
+                    notice = 'Restart server? Playback may be interrupted. Press y to confirm, any other key to cancel.'
+                    key = None
                 if key in ('j', 'k') and snapshot and snapshot['clients']:
                     selected = (selected + (1 if key == 'j' else -1)) % len(snapshot['clients'])
                 if key == '\x1b':

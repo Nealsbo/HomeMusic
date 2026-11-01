@@ -13,6 +13,7 @@ import time
 import uuid
 from urllib.parse import unquote
 
+from storage import directory_sources, PREFIX
 from collection_health import CollectionHealth
 from operations import OperationHistory
 from control import ControlStore
@@ -28,8 +29,10 @@ def re_client_id(value):
 
 
 class Library:
-    def __init__(self, root, database, max_upload_mb=512, ffprobe=None, ffmpeg=None):
-        self.root = Path(root).resolve()
+    def __init__(self, root, database, max_upload_mb=512, ffprobe=None, ffmpeg=None, music_sources=None):
+        self.sources = directory_sources(root, music_sources)
+        self.source_errors = {}
+        self.root = self.sources[0].root
         self.root.mkdir(parents=True, exist_ok=True)
         self.database = str(Path(database).resolve())
         Path(self.database).parent.mkdir(parents=True, exist_ok=True)
@@ -86,40 +89,63 @@ class Library:
         parts = PurePosixPath(relative)
         if parts.is_absolute() or '..' in parts.parts:
             raise ValueError('Path must be inside the music directory')
-        target = self.root.joinpath(*parts.parts)
+        source, local = self.source_path(relative)
+        if not source.primary and not source.root.is_dir():
+            raise FileNotFoundError('Storage unavailable: ' + source.name)
+        target = source.root.joinpath(*local.parts)
         # Reject symlinks, including links to other locations within the library.
-        cursor = self.root
-        for part in parts.parts:
+        cursor = source.root
+        for part in local.parts:
             cursor = cursor / part
             if cursor.is_symlink():
                 raise ValueError('Symbolic links are not supported')
-        if not target.resolve().is_relative_to(self.root):
+        if not target.resolve().is_relative_to(source.root):
             raise ValueError('Outside the music directory')
         if must_exist and not target.exists():
             raise FileNotFoundError(relative)
         return target
 
+    def source_path(self, relative):
+        parts = PurePosixPath(relative).parts
+        if parts and parts[0] == PREFIX:
+            if len(parts) < 2:
+                raise ValueError('A music source is required')
+            source = next((s for s in self.sources if s.id == parts[1] and not s.primary), None)
+            if source is None:
+                raise FileNotFoundError('Music source is not configured')
+            return source, PurePosixPath(*parts[2:])
+        return self.sources[0], PurePosixPath(relative)
+
+    def catalog_path(self, target):
+        for source in self.sources:
+            if target.is_relative_to(source.root):
+                return source.catalog_path(target)
+        raise ValueError('Outside the music directories')
+
+    def source_status(self):
+        return [dict(id=s.id, name=s.name, type=s.type, path=str(s.root),
+                     folder=s.prefix, available=s.root.is_dir() and s.id not in self.source_errors,
+                     error=self.source_errors.get(s.id, ''), primary=s.primary) for s in self.sources]
+
     def scan(self):
         with self.lock, self.connect() as db:
             self.operations.ensure_ready(db)
             known = {r['path']: r for r in db.execute('SELECT * FROM tracks')}
-            seen = set()
             position = db.execute('SELECT COALESCE(MAX(position),0) FROM tracks').fetchone()[0]
-            def scan_error(error):
-                raise error
-            for directory, dirs, files in os.walk(self.root, followlinks=False, onerror=scan_error):
-                dirs[:] = sorted(d for d in dirs if not (Path(directory) / d).is_symlink())
-                for name in sorted(files):
-                    p = Path(directory) / name
-                    if p.suffix.lower() not in FORMATS or p.is_symlink():
-                        continue
-                    relative = p.relative_to(self.root).as_posix()
+            for source in self.sources:
+                try:
+                    entries = [(directory / name, (directory / name).stat())
+                               for directory, files in source.directories() for name in sorted(files)
+                               if (directory / name).suffix.lower() in FORMATS
+                               and not (directory / name).is_symlink()]
+                except OSError as error:
+                    self.source_errors[source.id] = str(error)
+                    continue
+                self.source_errors.pop(source.id, None)
+                seen = set()
+                for p, stat in entries:
+                    relative = source.catalog_path(p)
                     seen.add(relative)
-                    try:
-                        stat = p.stat()
-                    except FileNotFoundError:
-                        seen.discard(relative)
-                        continue
                     if relative in known:
                         old = known[relative]
                         changed = old['size'] != stat.st_size or old['file_mtime_ns'] != stat.st_mtime_ns
@@ -135,8 +161,11 @@ class Library:
                             VALUES(?,?,?,?,?,?,?,?,?,?)''',
                             (uuid.uuid4().hex, relative, initial['title'], initial['artist'], '',
                              stat.st_size, stat.st_mtime, position, stat.st_mtime_ns, time.time()))
-            for path in known.keys() - seen:
-                db.execute('DELETE FROM tracks WHERE path=?', (path,))
+                for path in known.keys() - seen:
+                    belongs = (path.startswith(source.prefix + '/') if not source.primary
+                               else not path.startswith(PREFIX + '/'))
+                    if belongs:
+                        db.execute('DELETE FROM tracks WHERE path=?', (path,))
         self._metadata_event.set()
 
     def start_metadata_worker(self):
@@ -164,11 +193,21 @@ class Library:
         completed = 0
         while not self._stop_metadata.is_set() and (limit is None or completed < limit):
             with self.lock, self.connect() as db:
-                row = db.execute("SELECT * FROM tracks WHERE metadata_key='' ORDER BY position LIMIT 1").fetchone()
+                row = None
+                for candidate in db.execute("SELECT * FROM tracks WHERE metadata_key='' ORDER BY position"):
+                    try:
+                        if self.path(candidate['path']).is_file():
+                            row = candidate
+                            break
+                    except (OSError, ValueError):
+                        continue
                 if row is None:
                     return completed
                 snapshot = dict(row)
-            source = self.path(snapshot['path'])
+            try:
+                source = self.path(snapshot['path'])
+            except (OSError, ValueError):
+                return completed
             result = self.reader.read(source)
             with self.lock, self.connect() as db:
                 latest = db.execute('SELECT * FROM tracks WHERE id=?', (snapshot['id'],)).fetchone()
@@ -208,12 +247,14 @@ class Library:
                     'SELECT track FROM items WHERE playlist=? ORDER BY position', (playlist['id'],))]
             settings = {r['key']: json.loads(r['value']) for r in db.execute('SELECT * FROM settings')}
             folders = ['']
-            for directory, dirs, _ in os.walk(self.root):
-                dirs[:] = sorted(d for d in dirs if not (Path(directory) / d).is_symlink())
-                if Path(directory) != self.root:
-                    folders.append(Path(directory).relative_to(self.root).as_posix())
+            for source in self.sources:
+                try:
+                    source_folders = [source.catalog_path(directory) for directory, _ in source.directories()]
+                except OSError:
+                    source_folders = [source.prefix] if source.prefix else []
+                folders.extend(folder for folder in source_folders if folder)
             return dict(tracks=tracks, playlists=playlists, folders=folders, settings=settings,
-                        storage=str(self.root), maxUploadMB=self.max_upload_mb, schemaVersion=SCHEMA_VERSION,
+                        storage=str(self.root), sources=self.source_status(), maxUploadMB=self.max_upload_mb, schemaVersion=SCHEMA_VERSION,
                         metadata=dict(self.reader.capabilities(), pending=pending), listeningPolicy=listening_policy,
                         operationRecovery=self.operations.has_recovery(db))
 

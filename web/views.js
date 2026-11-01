@@ -37,7 +37,7 @@ function renderTracks() {
   <td class="check-cell"><input type="checkbox" data-select="${t.id}" aria-label="${escapeHTML(tr("Select"))} ${escapeHTML(t.title)}" ${selected.has(t.id) ? 'checked' : ''}></td>
   <td class="number-cell"><span class="drag-handle" title="${escapeHTML(tr("Drag"))}">${t.id === currentId && !audio.paused ? '♫' : i + 1}</span></td>
   <td><div class="track-info"><div class="mini-cover">${coverHTML(t)}</div><button class="icon favorite-button" data-favorite="${t.id}" aria-label="${escapeHTML(t.favorite ? tr("Remove from favorites") : tr("Add to favorites"))}" aria-pressed="${!!t.favorite}" ${favoriteBusy.has(t.id) ? 'disabled' : ''}>${t.favorite ? '♥' : '♡'}</button><div class="track-copy"><button class="track-name" data-play="${t.id}" title="${escapeHTML(t.path)}">${escapeHTML(t.title)}</button><span class="track-artist">${escapeHTML(t.artist || tr("Unknown artist"))}</span></div></div></td>
-  <td class="album-cell">${escapeHTML(t.album || '—')}${t.metadata_error ? '<span class="metadata-warning" title="' + escapeHTML(MusicI18n.message(t.metadata_error)) + '"> ⚠</span>' : ''}</td><td class="folder-cell">${escapeHTML(folderOf(t) || tr("Root"))}</td><td class="size-cell">${clock(t.duration || 0)}<small class="technical-size">${bytes(t.size)}</small></td>
+  <td class="album-cell">${escapeHTML(t.album || '—')}${t.metadata_error ? '<span class="metadata-warning" title="' + escapeHTML(MusicI18n.message(t.metadata_error)) + '"> ⚠</span>' : ''}</td><td class="folder-cell">${escapeHTML(folderLabel(folderOf(t)))}</td><td class="size-cell">${clock(t.duration || 0)}<small class="technical-size">${bytes(t.size)}</small></td>
   <td><div class="row-actions"><button class="icon" data-track-actions="${t.id}" aria-haspopup="dialog" aria-controls="trackActionsDialog" aria-label="${escapeHTML(tr('Actions for {title}',{title:t.title}))}">⋯</button></div></td></tr>`).join('');
   $('empty').hidden = visible.length > 0;
   $('empty').querySelector('h2').textContent = state.tracks.length ? tr("No tracks here yet") : tr("Your collection starts here");
@@ -54,5 +54,5 @@ function renderSelection() {
   $('addButton').disabled = !state.playlists.length;
 }
 function renderFolders() {
-  $('folderGrid').innerHTML = state.folders.map((folder, i) => `<button class="folder-card" data-folder-index="${i}"><span>▱</span><b>${escapeHTML(folder || tr("Root folder"))}</b><small>${state.tracks.filter(t => !folder || folderOf(t) === folder || folderOf(t).startsWith(folder + '/')).length} ${escapeHTML(tr("tracks"))}</small></button>`).join('');
+  $('folderGrid').innerHTML = state.folders.map((folder, i) => `<button class="folder-card" data-folder-index="${i}"><span>▱</span><b>${escapeHTML(folderLabel(folder))}</b><small>${state.tracks.filter(t => !folder || folderOf(t) === folder || folderOf(t).startsWith(folder + '/')).length} ${escapeHTML(tr("tracks"))}</small></button>`).join('');
 }

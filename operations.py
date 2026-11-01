@@ -199,6 +199,8 @@ class OperationHistory:
                 raise ValueError('Track not found')
             source = self.library.path(row['path'], True)
             target = destination / source.name
+            if source.stat().st_dev != destination.stat().st_dev:
+                raise ValueError('Moves between filesystems are not supported; copy files outside HomeMusic')
             if source == target:
                 continue
             if target in targets:
@@ -206,7 +208,7 @@ class OperationHistory:
             targets.add(target)
             info = fingerprint(source)
             before.append(dict(id=key, path=row['path'], fingerprint=info))
-            after.append(dict(id=key, path=target.relative_to(self.library.root).as_posix(), fingerprint=info))
+            after.append(dict(id=key, path=self.library.catalog_path(target), fingerprint=info))
         if not before:
             return dict(ok=True, operationId=None)
         # Preflight before committing an intent or touching any file.

@@ -1,8 +1,12 @@
 {
   "music_dir": "../Music/",
+  "music_sources": [],
   "database": "./data/library.sqlite3",
   "listen": true,
   "host": "0.0.0.0",
   "port": 8080,
-  "max_upload_mb": 512
+  "max_upload_mb": 512,
+  "updates_repository": "Nealsbo/HomeMusic",
+  "updates_auto_check": true,
+  "updates_startup_timeout": 90
 }

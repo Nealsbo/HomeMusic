@@ -53,6 +53,8 @@ MusicI18n.onChange = async () => {
   renderNav(); renderTracks(); renderFolders(); renderQueue(); updateNowPlaying();
   $('sizeCount').textContent = bytes(state.tracks.reduce((sum, track) => sum + track.size, 0));
   renderHealth(); renderSelectedDevice();
+  globalThis.serverUpdates?.render();
+  globalThis.serverControl?.render();
   setWaveMode(waveMode);
   audioWave.sync();
   if (view === 'history') await loadHistory(true);

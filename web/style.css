@@ -1,67 +1,11 @@
-/* Shared color roles. Add a scheme by overriding these tokens. */
+/* Layout and component styles; palettes live in themes/. */
+#storageSources { overflow-wrap:anywhere; }
 :root {
   --font-scale: 1;
   --icon-scale: 1;
   --ui-scale: max(var(--font-scale), var(--icon-scale));
   --player-height: calc(100px * var(--ui-scale));
   --sidebar-width: calc(238px + 60px * (var(--font-scale) - 1) + 32px * (var(--icon-scale) - 1));
-  --bg: #f7f8f4;
-  --ink: #202c26;
-  --muted: #7d867e;
-  --soft-ink: #53614e;
-  --green: #24754b;
-  --line: #e3e7df;
-  --side: #17231e;
-  --surface: #ffffff;
-  --soft: #eef1e7;
-  --hover: #f6f8f2;
-  --selected: #e9f2e1;
-  --side-ink: #e5f3dc;
-  --side-muted: #a8b7ac;
-  --side-active: #2d4235;
-  --badge: #bfd99e;
-  --on-badge: #203c27;
-  --on-accent: #ffffff;
-  --danger: #ab5550;
-}
-:root[data-theme="midnight"] {
-  --bg: #101923;
-  --ink: #e6eef7;
-  --muted: #a1b2c8;
-  --soft-ink: #b9cee5;
-  --green: #74b9e8;
-  --line: #34465b;
-  --side: #0b1320;
-  --surface: #1b2939;
-  --soft: #213349;
-  --hover: #263b52;
-  --selected: #2a435b;
-  --side-ink: #e3f0ff;
-  --side-muted: #9fb5d1;
-  --side-active: #253d58;
-  --badge: #96c7ec;
-  --on-badge: #162d43;
-  --on-accent: #102638;
-  --danger: #ffaaa0;
-}
-:root[data-theme="sand"] {
-  --bg: #fcf6ed;
-  --ink: #44312b;
-  --muted: #8c7367;
-  --soft-ink: #725a4c;
-  --green: #9b5634;
-  --line: #e4d5c4;
-  --side: #392c29;
-  --surface: #fffcf7;
-  --soft: #f3e8d7;
-  --hover: #faf0e2;
-  --selected: #f2e2cd;
-  --side-ink: #f7e5d2;
-  --side-muted: #c8ae9b;
-  --side-active: #594036;
-  --badge: #e9be8c;
-  --on-badge: #50321f;
-  --danger: #a63737;
 }
 * {
   box-sizing:border-box
@@ -1162,7 +1106,6 @@ dl {
   overflow-wrap: anywhere;
   font-size:calc(12px * var(--font-scale));
 }
-:root[data-theme="midnight"] .mini-cover { background: var(--soft); }
 /* Metadata and playback queue additions. */
 .cover, .mini-cover { overflow: hidden; }
 .cover img, .mini-cover img { width: 100%; height: 100%; object-fit: cover; }

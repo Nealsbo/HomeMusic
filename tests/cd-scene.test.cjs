@@ -32,7 +32,13 @@ test('vendored Three.js assets match the pinned version, checksums and MIT licen
 test('the real Three.js scene contains a hinged clear case, disc hole and independent holder', async () => {
   const f = await fixture(), scene = f.renderer.scene;
   const lid = scene.getObjectByName('case-lid'), disc = scene.getObjectByName('disc');
-  assert.equal(scene.getObjectByName('clear-lid').material.transmission,.95);
+  assert.equal(scene.getObjectByName('clear-lid').material.transmission,0);
+  assert.equal(scene.getObjectByName('clear-lid').material.transparent,true);
+  assert.ok(scene.getObjectByName('clear-lid').material.opacity <= .1);
+  assert.equal(scene.getObjectByName('clear-lid').material.roughness,0);
+  assert.equal(scene.getObjectByName('clear-lid').material.thickness,0);
+  assert.equal(scene.getObjectByName('clear-lid').material.ior,1.49);
+  assert.ok(scene.getObjectByName('clear-lid').material.clearcoat > 0);
   assert.equal(scene.getObjectByName('disc-surface').geometry.parameters.innerRadius,.18);
   assert.equal(scene.getObjectsByProperty('name','hub-clip').length,12);
   assert.notEqual(scene.getObjectByName('disc-holder').parent,disc);
@@ -92,7 +98,8 @@ test('plastic, artwork and lighting adapt to dark and light themes without reloa
   const f = await fixture(), scene = f.renderer.scene;
   const lid = scene.getObjectByName('clear-lid'), edge = scene.getObjectByName('case-spine');
   assert.equal(lid.castShadow,false); assert.equal(edge.castShadow,false);
-  assert.ok(edge.material.transmission < lid.material.transmission);
+  assert.ok(edge.material.transmission > 0);
+  assert.ok(lid.material.opacity < edge.material.transmission);
   const highlights = scene.getObjectsByProperty('name','plastic-highlight'); assert.equal(highlights.length,2);
   assert.equal(highlights[0].material,highlights[1].material);
   const paper = scene.getObjectByName('album-insert').material, print = scene.getObjectByName('disc-label').material;

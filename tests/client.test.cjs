@@ -136,6 +136,22 @@ test('initial library includes nested folders and selects the first playlist des
   assert.equal(c.get('nowTitle').textContent,'Choose music');
 });
 
+test('queue backdrop closes only for gestures starting and ending outside and preserves playback', async () => {
+  const c = await client(); await c.run("playTrack('a',['a','b'])");
+  const source = c.audio.src, queue = c.run('JSON.stringify(queueModel.snapshot())');
+  const dialog = c.get('queueDialog');
+  dialog.getBoundingClientRect = () => ({left:100,top:100,right:400,bottom:500});
+  c.get('queueButton').onclick();
+  const outside = {target:dialog,pointerId:1,clientX:40,clientY:200};
+  const inside = {target:dialog,pointerId:1,clientX:200,clientY:200};
+  dialog.onpointerdown(inside); dialog.onpointerup(outside); assert.equal(dialog.open,true);
+  dialog.onpointerdown(outside); dialog.onpointerup(inside); assert.equal(dialog.open,true);
+  dialog.onpointerdown(outside); dialog.onpointercancel(); dialog.onpointerup(outside); assert.equal(dialog.open,true);
+  dialog.onpointerdown(outside); dialog.onpointerup(outside); assert.equal(dialog.open,false);
+  assert.equal(c.audio.src,source); assert.equal(c.audio.paused,false);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'),queue);
+});
+
 test('navigation drawer and queue shortcut preserve the existing playback and DOM controls', async () => {
   const c = await client(); await c.run("playTrack('a',['a','b'])");
   c.audio.currentTime = 41; await new Promise(resolve => setImmediate(resolve));
@@ -1436,4 +1452,54 @@ test('named music sources label folders and status without changing playback', a
   c.get('newFolderName').value = 'New/Albums';
   await c.get('newFolderForm').onsubmit({preventDefault(){}});
   assert.equal(c.calls.findLast(call => call.action === 'folder').body.path, '@sources/archive/New/Albums');
+});
+
+
+test('all eight themes and new background palettes preserve playback and synchronize both settings panels', async () => {
+  const c = await client(); await c.run("playTrack('a',['a','b'])"); c.audio.currentTime = 24;
+  const source = c.audio.src, queue = c.run('JSON.stringify(queueModel.snapshot())'), session = c.run('listeningSession');
+  for (const theme of ['forest','sand','latte','dawn','midnight','nord','mocha','dracula']) {
+    c.run(`applyTheme('${theme}')`);
+    assert.equal(c.run('document.documentElement.dataset.theme'),theme);
+    assert.equal(c.run('document.documentElement.style.colorScheme'),['forest','sand','latte','dawn'].includes(theme) ? 'light' : 'dark');
+  }
+  c.run('expandedPlayer.open()');
+  for (const background of ['aurora','gradient','stars','grid','northern-lights']) {
+    c.get('expandedBackgroundSetting').onchange({target:{value:background}});
+    assert.equal(c.get('playerBackgroundSetting').value,background);
+    assert.equal(c.get('expandedPlayerDialog').dataset.backgroundMotion,'on');
+  }
+  c.get('playerPaletteSetting').onchange({target:{value:'custom'}});
+  c.get('playerPrimaryColor').oninput({target:{value:'#123456'}});
+  c.get('expandedSecondaryColor').oninput({target:{value:'#abcdef'}});
+  assert.equal(c.get('expandedPrimaryColor').value,'#123456');
+  assert.equal(c.get('playerSecondaryColor').value,'#abcdef');
+  assert.equal(c.get('expandedPlayerDialog').style['--player-color-primary'],'#123456');
+  c.get('expandedPaletteSetting').onchange({target:{value:'nord'}});
+  assert.equal(c.get('playerCustomColors').hidden,true);
+  assert.equal(c.get('expandedPlayerDialog').style['--player-color-primary'],'#88c0d0');
+  assert.equal(c.run('document.documentElement.dataset.theme'),'dracula');
+  c.audio.pause(); assert.equal(c.get('expandedPlayerDialog').dataset.backgroundMotion,'off');
+  assert.equal(c.audio.src,source); assert.equal(c.audio.currentTime,24);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'),queue); assert.equal(c.run('listeningSession'),session);
+});
+
+test('background speed synchronizes panels, scales durations and stops only background motion at zero', async () => {
+  const c=await client(); await c.run("playTrack('a',['a','b']); playerAppearance.set({background:'northern-lights'}); expandedPlayer.open()");
+  c.audio.currentTime=32;
+  const source=c.audio.src, queue=c.run('JSON.stringify(queueModel.snapshot())'), session=c.run('listeningSession');
+  assert.equal(c.get('playerBackgroundSpeedSetting').value,'20');
+  c.get('expandedBackgroundSpeedSetting').oninput({target:{value:'100'}});
+  assert.equal(c.get('playerBackgroundSpeedValue').textContent,'100%');
+  assert.equal(c.get('expandedPlayerDialog').style['--player-background-duration-scale'],'0.2');
+  c.get('playerBackgroundSpeedSetting').oninput({target:{value:'0'}});
+  assert.equal(c.get('expandedBackgroundSpeedSetting').value,'0');
+  assert.equal(c.get('expandedPlayerDialog').dataset.backgroundMotion,'off');
+  assert.equal(c.get('expandedPlayerDialog').dataset.motion,'on');
+  assert.equal(c.run('playerAppearance.get().motionEnabled'),true);
+  c.get('expandedBackgroundSpeedSetting').oninput({target:{value:'20'}});
+  assert.equal(c.get('expandedPlayerDialog').dataset.backgroundMotion,'on');
+  assert.equal(c.get('expandedPlayerDialog').style['--player-background-duration-scale'],'1');
+  assert.equal(c.audio.src,source); assert.equal(c.audio.currentTime,32); assert.equal(c.audio.paused,false);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'),queue); assert.equal(c.run('listeningSession'),session);
 });

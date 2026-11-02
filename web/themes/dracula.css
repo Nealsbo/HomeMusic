@@ -1,0 +1,22 @@
+/* Adapted from Dracula. See THEMES.md for sources. */
+:root[data-theme="dracula"] {
+  --bg: #282a36;
+  --ink: #f8f8f2;
+  --muted: #b8bddd;
+  --soft-ink: #d2d4e7;
+  --green: #bd93f9;
+  --line: #626884;
+  --side: #21222c;
+  --surface: #343746;
+  --soft: #44475a;
+  --hover: #484b63;
+  --selected: #514268;
+  --side-ink: #f8f8f2;
+  --side-muted: #b8bddd;
+  --side-active: #44475a;
+  --badge: #50fa7b;
+  --on-badge: #1c3024;
+  --on-accent: #282a36;
+  --danger: #ff7777;
+}
+:root[data-theme="dracula"] .mini-cover { background: var(--soft); }

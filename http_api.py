@@ -161,8 +161,8 @@ class Handler(BaseHTTPRequestHandler):
                         lines.extend([f"#EXTINF:-1,{row['artist']} - {row['title']}", row['path']])
                 return self.reply(200, ('\n'.join(lines) + '\n').encode('utf-8'), 'audio/x-mpegurl', head)
             assets = {'/': 'index.html', '/style.css': 'style.css', '/layout.css': 'layout.css', '/expanded-player.css': 'expanded-player.css', '/cd-scene.mjs': 'cd-scene.mjs',
-                      **{f'/themes/{name}.css': f'themes/{name}.css' for name in ('forest', 'midnight', 'sand')},
-                      **{f'/{name}.js': f'{name}.js' for name in ('server-control','updates','layout','visualization-presets','cd-view','audio-analysis','effects-view','player-appearance','album-view','player-bridge','player-views','expanded-player','client-session','i18n','bootstrap','operations','health','devices','audio-wave','visualizer','queue','listen-session','catalog','core','settings','library','views','collection','player','history','app')},
+                      **{f'/themes/{name}.css': f'themes/{name}.css' for name in ('forest', 'midnight', 'sand', 'latte', 'dawn', 'nord', 'mocha', 'dracula')},
+                      **{f'/{name}.js': f'{name}.js' for name in ('themes','server-control','updates','layout','visualization-presets','cd-view','audio-analysis','effects-view','player-appearance','album-view','player-bridge','player-views','expanded-player','client-session','i18n','bootstrap','operations','health','devices','audio-wave','visualizer','queue','listen-session','catalog','core','settings','library','views','collection','player','history','app')},
                       **{f'/vendor/three-r180/{name}': f'vendor/three-r180/{name}' for name in ('three.module.min.js','three.core.min.js','LICENSE','manifest.json')}}
             if re.fullmatch(r'/locales/[a-zA-Z0-9_-]+\.json', path):
                 return self.send_file(WEB / path.lstrip('/'), head)

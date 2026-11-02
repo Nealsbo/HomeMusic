@@ -33,14 +33,19 @@
   function updateBackgroundMotion() {
     const value = playerAppearance.get();
     const motion = opened && !closing && !document.hidden && !!lastSnapshot?.playing && lastSnapshot.state === 'playing' &&
-      value.motionEnabled && value.background === 'waves' && value.intensity > 0 ? 'on' : 'off';
+      value.motionEnabled && value.backgroundSpeed > 0 && ['waves','aurora','gradient','stars','grid','northern-lights'].includes(value.background) && value.intensity > 0 ? 'on' : 'off';
     if (dialog.dataset.backgroundMotion !== motion) dialog.dataset.backgroundMotion = motion;
   }
   function applyAppearance(value) {
     dialog.dataset.background = value.background;
+    dialog.dataset.palette = value.palette;
     dialog.dataset.backgroundVisible = String(value.background !== 'none' && value.intensity > 0);
     dialog.dataset.motion = value.motionEnabled ? 'on' : 'off';
-    dialog.style.setProperty('--player-background-opacity',String(value.intensity / 100 * .3));
+    dialog.style.setProperty('--player-background-opacity',String(value.intensity / 100));
+    dialog.style.setProperty('--player-background-duration-scale',String(value.backgroundSpeed > 0 ? 20 / value.backgroundSpeed : 1));
+    const palette = MusicThemes.findPalette(value.palette === 'theme' ? document.documentElement.dataset.theme : value.palette);
+    dialog.style.setProperty('--player-color-primary',value.palette === 'custom' ? value.primary : palette?.primary || '#24754b');
+    dialog.style.setProperty('--player-color-secondary',value.palette === 'custom' ? value.secondary : palette?.secondary || '#a5bc77');
     try { currentView?.setAppearance?.(value); }
     catch (error) { console.error('Player view appearance update failed',error); }
     updateBackgroundMotion();
@@ -172,6 +177,7 @@
     event.preventDefault(); setMode(tabs[next].mode); tabs[next].button.focus();
   };
   root.expandedPlayer = Object.freeze({open,close,setMode,setSettingsOpen,
+    applyPalette() { applyAppearance(playerAppearance.get()); },
     refresh() { updateTabs(); updateSettingsTitle(); if (opened && !closing) render(playbackBridge.getState()); },
     get isOpen() { return opened; }, get mode() { return mode; }
   });

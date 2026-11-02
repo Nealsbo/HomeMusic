@@ -13,7 +13,7 @@ const frame = (active = true) => ({width:960,height:360,levels:new Float32Array(
   samples:Uint8Array.from({length:256},(_,i) => active ? 128 + Math.round(Math.sin(i / 12) * 100) : 128),
   intensity:100,active,elapsed:1000 / 30});
 
-test('each classic renderer responds to sampled audio with bounded drawing work and coordinates', () => {
+test('each preset renderer responds to sampled audio with bounded drawing work and coordinates', () => {
   for (const preset of presets) {
     const loud = drawing(), quiet = drawing(), input = frame();
     const before = [...input.samples], levels = [...input.levels];

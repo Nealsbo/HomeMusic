@@ -24,7 +24,7 @@
       let saved;
       try { saved = JSON.parse(this.storage?.getItem('expandedPlayerEffects')); } catch {}
       this.value = normalizeEffects(saved);
-      this.renderer = library?.create(this.value.preset);
+      this.renderer = library?.create(this.value.preset,{document:this.document});
       this.elapsed = 0;
       this.transition = null;
       this.appearance = {motionEnabled:true,reducedMotion:false};
@@ -32,6 +32,9 @@
       this.syncing = false; this.drawing = false; this.unlockAttempted = false; this.lastFrame = null;
       this.frequencies = new Uint8Array(128); this.samples = new Uint8Array(256); this.levels = new Float32Array(40);
       this.onVisibility = () => this.sync();
+      this.ResizeObserver = options.ResizeObserver || root.ResizeObserver;
+      this.pixelRatio = Math.min(1.5,options.pixelRatio || root.devicePixelRatio || 1);
+      this.onResize = () => this.resize();
     }
     element(tag, className) {
       const element = this.document.createElement(tag); element.className = className; return element;
@@ -68,10 +71,26 @@
       this.enable.onchange = event => this.set({enabled:event.target.checked});
       this.start.onclick = () => { this.unlockAttempted = false; this.sync(); };
       this.document.addEventListener?.('visibilitychange',this.onVisibility);
+      if (this.ResizeObserver) {
+        this.resizeObserver = new this.ResizeObserver(this.onResize);
+        this.resizeObserver.observe(this.canvas);
+      }
+      this.resize();
       this.refreshLabels(true);
     }
     mountSettings(container) {
       container.append(this.controls); return true;
+    }
+    resize() {
+      if (!this.canvas) return;
+      const width = this.canvas.clientWidth || 960, height = this.canvas.clientHeight || 360;
+      const ratio = Math.min(this.pixelRatio,1920 / width,1080 / height);
+      const nextWidth = Math.max(1,Math.round(width * ratio)), nextHeight = Math.max(1,Math.round(height * ratio));
+      if (nextWidth === this.canvas.width && nextHeight === this.canvas.height) return;
+      this.clearTransition(); this.canvas.width = nextWidth; this.canvas.height = nextHeight;
+      if (this.context && !this.failed) {
+        try { this.draw(this.animating()); } catch { this.failed = true; this.consumer?.setActive(false); }
+      }
     }
     focusSettings() { this.presetSelect.focus(); return true; }
     set(patch) {
@@ -79,7 +98,7 @@
       const next = normalizeEffects({...this.value,...patch});
       if (previous !== next.preset) this.captureTransition();
       this.value = next;
-      if (previous !== this.value.preset) this.renderer = library?.create(this.value.preset);
+      if (previous !== this.value.preset) this.renderer = library?.create(this.value.preset,{document:this.document});
       this.renderer?.reset();
       try { this.storage?.setItem('expandedPlayerEffects',JSON.stringify(this.value)); } catch {}
       this.unlockAttempted = false;
@@ -208,7 +227,7 @@
       context.clearRect(0,0,width,height); context.fillStyle = this.color; context.strokeStyle = this.color;
       if (this.renderer) {
         this.renderer.draw(context,{width,height,active,levels:this.levels,samples:this.samples,
-          intensity:this.value.intensity,elapsed:this.elapsed});
+          intensity:this.value.intensity,elapsed:this.elapsed,color:this.color});
         return;
       }
       context.globalAlpha = active ? .85 : .25;
@@ -229,10 +248,11 @@
         context.stroke();
       }
     }
-    setActive(active) { if (active !== this.active) this.unlockAttempted = false; this.active = active; this.sync(); }
+    setActive(active) { if (active !== this.active) this.unlockAttempted = false; this.active = active; if (active) this.resize(); this.sync(); }
     setAppearance(value) { this.appearance = value; this.sync(); }
     dispose() {
       this.active = false; this.stopRendering(); this.unsubscribe?.(); this.consumer?.dispose();
+      this.resizeObserver?.disconnect();
       this.document.removeEventListener?.('visibilitychange',this.onVisibility);
       this.presetSelect.onchange = null; this.intensity.oninput = null; this.enable.onchange = null; this.start.onclick = null;
       this.controls.remove?.();

@@ -42,7 +42,7 @@
     rootElement.querySelectorAll('[data-i18n]').forEach(element => {
       element.textContent = translate(element.getAttribute('data-i18n'));
     });
-    for (const attr of ['title', 'placeholder', 'aria-label']) {
+    for (const attr of ['title', 'placeholder', 'aria-label', 'label']) {
       rootElement.querySelectorAll('[data-i18n-' + attr + ']').forEach(element => {
         element.setAttribute(attr, translate(element.getAttribute('data-i18n-' + attr)));
       });

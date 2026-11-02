@@ -5,7 +5,7 @@ const {AudioAnalysis} = require('../web/audio-analysis.js');
 const {audioGraph,drawingContext} = require('./audio-fixture.cjs');
 const {presets} = require('../web/visualization-presets.js');
 
-function fixture({canvas = true, saved} = {}) {
+function fixture({canvas = true, saved, ResizeObserver} = {}) {
   const graph = audioGraph(), drawing = drawingContext(), timers = new Map(), listeners = new Set(), storage = new Map();
   let now = 0, next = 0;
   if (saved) storage.set('expandedPlayerEffects',saved);
@@ -20,7 +20,7 @@ function fixture({canvas = true, saved} = {}) {
     addEventListener(type,fn) { listeners.add(fn); },removeEventListener(type,fn) { listeners.delete(fn); }};
   const analysis = new AudioAnalysis(graph.audio,{createContext:() => graph.createContext()});
   const container = new Element('section');
-  const view = new EffectsPlayerView({document,analysis:{createConsumer:() => analysis.createConsumer()},translate:key => key,
+  const view = new EffectsPlayerView({document,ResizeObserver,analysis:{createConsumer:() => analysis.createConsumer()},translate:key => key,
     getColor:() => '#24754b',now:() => now,
     schedule:(fn,delay) => { timers.set(++next,{fn,delay}); return next; },cancel:id => timers.delete(id),
     storage:{getItem:key => storage.get(key),setItem:(key,value) => storage.set(key,value)}});
@@ -202,4 +202,24 @@ test('pause, visibility, disabled effects and reduced motion cancel crossfades w
     f.view.set({preset:'waveform'}); assert.equal(f.view.transition,null);
     assert.equal(f.timers.size,0); assert.ok(f.links.has(f.context.destination)); f.view.dispose();
   }
+});
+
+
+test('resizing effects fills the stage with bounded buffers without another analyser or render loop', async () => {
+  let resize, disconnected = 0;
+  class Observer {
+    constructor(callback) { resize = callback; }
+    observe() {}
+    disconnect() { disconnected++; }
+  }
+  const f = fixture({ResizeObserver:Observer}); await f.start(); f.view.set({preset:'mirror-spectrum'});
+  const buffer = f.view.transition.canvas, reads = f.counts.reads;
+  f.view.canvas.clientWidth = 3000; f.view.canvas.clientHeight = 1400;
+  resize();
+  assert.equal(buffer.width,0); assert.equal(f.view.transition,null);
+  assert.ok(f.view.canvas.width <= 1920 && f.view.canvas.height <= 1080);
+  assert.ok(Math.abs(f.view.canvas.width / f.view.canvas.height - 3000 / 1400) < .01);
+  assert.equal(f.counts.reads,reads); assert.equal(f.counts.contexts,1); assert.equal(f.counts.sources,1);
+  assert.equal(f.timers.size,1);
+  f.view.dispose(); assert.equal(disconnected,1); assert.equal(f.timers.size,0);
 });

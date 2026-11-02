@@ -1,0 +1,21 @@
+/* Adapted from Catppuccin Latte. See THEMES.md for sources. */
+:root[data-theme="latte"] {
+  --bg: #eff1f5;
+  --ink: #4c4f69;
+  --muted: #62667c;
+  --soft-ink: #5c5f77;
+  --green: #8839ef;
+  --line: #ccd0da;
+  --side: #e6e9ef;
+  --surface: #ffffff;
+  --soft: #e6e9ef;
+  --hover: #dce0e8;
+  --selected: #d9c7f5;
+  --side-ink: #4c4f69;
+  --side-muted: #62667c;
+  --side-active: #ccd0da;
+  --badge: #b4befe;
+  --on-badge: #303446;
+  --on-accent: #ffffff;
+  --danger: #d20f39;
+}

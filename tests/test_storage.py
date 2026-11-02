@@ -139,7 +139,7 @@ class StorageTests(unittest.TestCase):
         code, body = request('PUT', '/api/upload', b'uploaded', {'X-File-Path':'@sources/archive/new.mp3'})
         self.assertEqual(code, 201, body)
         self.assertEqual((self.extra / 'new.mp3').read_bytes(), b'uploaded')
-        for name in ('forest', 'midnight', 'sand'):
+        for name in ('forest', 'midnight', 'sand', 'latte', 'dawn', 'nord', 'mocha', 'dracula'):
             code, css = request('GET', '/themes/' + name + '.css')
             self.assertEqual(code, 200)
             self.assertIn(b'--bg:', css)

@@ -1,0 +1,22 @@
+/* Adapted from Catppuccin Mocha. See THEMES.md for sources. */
+:root[data-theme="mocha"] {
+  --bg: #1e1e2e;
+  --ink: #cdd6f4;
+  --muted: #a6adc8;
+  --soft-ink: #bac2de;
+  --green: #cba6f7;
+  --line: #585b70;
+  --side: #181825;
+  --surface: #313244;
+  --soft: #45475a;
+  --hover: #414358;
+  --selected: #4f4167;
+  --side-ink: #cdd6f4;
+  --side-muted: #a6adc8;
+  --side-active: #45475a;
+  --badge: #cba6f7;
+  --on-badge: #1e1e2e;
+  --on-accent: #1e1e2e;
+  --danger: #f38ba8;
+}
+:root[data-theme="mocha"] .mini-cover { background: var(--soft); }

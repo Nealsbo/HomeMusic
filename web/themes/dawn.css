@@ -1,0 +1,21 @@
+/* Adapted from Rose Pine Dawn. See THEMES.md for sources. */
+:root[data-theme="dawn"] {
+  --bg: #faf4ed;
+  --ink: #575279;
+  --muted: #6e6a86;
+  --soft-ink: #575279;
+  --green: #9a4661;
+  --line: #dfdad9;
+  --side: #f2e9e1;
+  --surface: #fffaf3;
+  --soft: #f2e9e1;
+  --hover: #f4ede8;
+  --selected: #ead5dc;
+  --side-ink: #575279;
+  --side-muted: #6e6a86;
+  --side-active: #e9d7d4;
+  --badge: #d9b2bf;
+  --on-badge: #4c3045;
+  --on-accent: #ffffff;
+  --danger: #b33155;
+}

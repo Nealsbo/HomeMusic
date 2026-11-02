@@ -150,6 +150,23 @@ $('previous').onclick = handle(() => step(-1)); $('next').onclick = handle(() =>
 $('shuffle').onclick = () => { shuffled = !shuffled; queueModel.setShuffle(shuffled); syncQueue(); renderQueue(); reportPlayback(); $('shuffle').classList.toggle('enabled',shuffled); $('shuffle').setAttribute('aria-pressed',shuffled); persistPlayer(); };
 $('repeat').onclick = () => { repeating = !repeating; $('repeat').classList.toggle('enabled',repeating); $('repeat').setAttribute('aria-pressed',repeating); persistPlayer(); };
 $('queueButton').onclick = () => { renderQueue(); $('queueDialog').showModal(); };
+// A gesture that starts in the queue must never dismiss it on release outside.
+(() => {
+  const dialog = $('queueDialog');
+  let backdropPointer = null;
+  const outside = event => {
+    const box = dialog.getBoundingClientRect();
+    return event.target === dialog && (event.clientX < box.left || event.clientX > box.right ||
+      event.clientY < box.top || event.clientY > box.bottom);
+  };
+  dialog.onpointerdown = event => { backdropPointer = outside(event) ? event.pointerId : null; };
+  dialog.onpointerup = event => {
+    const close = backdropPointer !== null && backdropPointer === event.pointerId && outside(event);
+    backdropPointer = null;
+    if (close) dialog.close();
+  };
+  dialog.onpointercancel = dialog.onclose = () => { backdropPointer = null; };
+})();
 $('queueList').onclick = handle(async e => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.dataset.queue) { queueModel.select(b.dataset.queue); return loadCurrent(); }

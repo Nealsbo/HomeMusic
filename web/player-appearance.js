@@ -1,13 +1,20 @@
 /* Local presentation preferences; no playback or server dependencies. */
 (function(root) {
-  const defaults = Object.freeze({background:'ambient',intensity:40,animation:true});
+  const themes = typeof module !== 'undefined' && module.exports ? require('./themes.js') : root.MusicThemes;
+  const backgrounds = Object.freeze(['none','ambient','waves','texture','aurora','gradient','stars','grid','northern-lights']);
+  const defaults = Object.freeze({background:'ambient',intensity:40,backgroundSpeed:20,animation:true,palette:'theme',primary:'#62eab7',secondary:'#ac81ff'});
   function normalize(value) {
     value = value && typeof value === 'object' ? value : {};
     return Object.freeze({
-      background:['none','ambient','waves','texture'].includes(value.background) ? value.background : defaults.background,
+      background:backgrounds.includes(value.background) ? value.background : defaults.background,
       intensity:typeof value.intensity === 'number' && Number.isFinite(value.intensity) ?
         Math.round(Math.max(0,Math.min(100,value.intensity))) : defaults.intensity,
-      animation:typeof value.animation === 'boolean' ? value.animation : defaults.animation
+      backgroundSpeed:typeof value.backgroundSpeed === 'number' && Number.isFinite(value.backgroundSpeed) ?
+        Math.round(Math.max(0,Math.min(100,value.backgroundSpeed))) : defaults.backgroundSpeed,
+      animation:typeof value.animation === 'boolean' ? value.animation : defaults.animation,
+      palette:['theme','custom'].includes(value.palette) || themes.findPalette(value.palette) ? value.palette : defaults.palette,
+      primary:typeof value.primary === 'string' && /^#[a-f\d]{6}$/i.test(value.primary) ? value.primary.toLowerCase() : defaults.primary,
+      secondary:typeof value.secondary === 'string' && /^#[a-f\d]{6}$/i.test(value.secondary) ? value.secondary.toLowerCase() : defaults.secondary
     });
   }
   class PlayerAppearance {
@@ -46,6 +53,6 @@
     dispose() { this.motion.removeEventListener?.('change',this.onMotionChange); this.listeners.clear(); }
   }
   root.PlayerAppearance = PlayerAppearance;
-  if (typeof module !== 'undefined' && module.exports) module.exports = {PlayerAppearance,normalize};
+  if (typeof module !== 'undefined' && module.exports) module.exports = {PlayerAppearance,normalize,backgrounds};
   else root.playerAppearance = new PlayerAppearance();
 })(globalThis);

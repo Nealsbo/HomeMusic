@@ -18,7 +18,7 @@
 .expanded-player::backdrop { background: transparent; backdrop-filter: none; }
 .expanded-player-header {
   display: flex; justify-content: space-between; align-items: center;
-  gap: 16px; flex-wrap: wrap; height: auto; padding: 0 0 12px;
+  gap: 16px; flex-wrap: wrap; height: auto; padding: 0 0 4px;
   border-bottom: 1px solid var(--line);
 }
 .expanded-player-header > button { display: inline-flex; align-items: center; gap: 8px; }
@@ -67,7 +67,6 @@
 .expanded-player .volume input { width: clamp(50px, 10vw, 120px); }
 @media (max-width: 640px) {
   .expanded-player-header { justify-content: center; gap: 10px; }
-  .expanded-player-header > #collapsePlayer { margin-right: auto; }
   .expanded-player-tabs { width: 100%; }
   .expanded-player-tabs button { flex: 1; min-width: 0; padding: 8px 10px; }
   .expanded-player-stage { border-radius: 16px; }
@@ -146,18 +145,18 @@
   content: ''; display: none; position: absolute; inset: -30%; z-index: -1;
   pointer-events: none; opacity: var(--player-background-opacity, .12);
 }
-.expanded-player[data-background-visible="true"][data-background="ambient"] .expanded-player-stage:not(.album-stage)::before {
-  display: block; background: radial-gradient(ellipse at 25% 20%,var(--green),transparent 65%),radial-gradient(ellipse at 80% 90%,var(--soft-ink),transparent 65%);
+.expanded-player[data-background-visible="true"][data-background="ambient"] .expanded-player-stage::before {
+  display: block; background: radial-gradient(ellipse at 25% 20%,var(--player-color-primary,var(--green)),transparent 65%),radial-gradient(ellipse at 80% 90%,var(--player-color-secondary,var(--soft-ink)),transparent 65%);
 }
 .expanded-player[data-background-visible="true"][data-background="waves"] .expanded-player-stage::before {
   display: block; transform: rotate(-12deg);
-  background: radial-gradient(ellipse at 20% 20%,transparent 36%,var(--green) 37%,transparent 42%),radial-gradient(ellipse at 80% 80%,transparent 30%,var(--soft-ink) 31%,transparent 38%);
+  background: radial-gradient(ellipse at 20% 20%,transparent 36%,var(--player-color-primary,var(--green)) 37%,transparent 42%),radial-gradient(ellipse at 80% 80%,transparent 30%,var(--player-color-secondary,var(--soft-ink)) 31%,transparent 38%);
 }
 .expanded-player[data-background="waves"][data-background-motion="on"] .expanded-player-stage::before {
-  animation: player-background-drift 16s ease-in-out infinite alternate; will-change: transform;
+  animation: player-background-drift calc(16s * var(--player-background-duration-scale,1)) ease-in-out infinite alternate; will-change: transform;
 }
 .expanded-player[data-background-visible="true"][data-background="texture"] .expanded-player-stage::before {
-  display: block; background-image: radial-gradient(var(--soft-ink) 1px,transparent 1px); background-size: 9px 9px;
+  display: block; background-image: radial-gradient(var(--player-color-secondary,var(--soft-ink)) 1px,transparent 1px); background-size: 9px 9px;
 }
 .expanded-player[data-background-visible="false"] .album-artwork-backdrop,
 .expanded-player[data-background="waves"] .album-artwork-backdrop,
@@ -200,6 +199,7 @@
 .cd-controls button { min-height: 40px; font-size: calc(12px * var(--font-scale)); }
 .cd-controls label { display: flex; align-items: center; gap: 8px; font-size: calc(12px * var(--font-scale)); color: var(--soft-ink); }
 .cd-controls select { min-width: 0; max-width: 100%; background: var(--surface); color: var(--ink); }
+.cd-controls output { color:var(--green); font-variant-numeric:tabular-nums; }
 .cd-viewport { position: relative; isolation: isolate; width: 100%; min-width: 0; height: clamp(200px, 38vh, 420px); }
 .cd-canvas { display: block; width: 100%; height: 100%; background: transparent; touch-action: none; cursor: pointer; border-radius: 16px; }
 .cd-canvas:active { cursor: grabbing; }
@@ -216,7 +216,7 @@
 /* One settings panel owns presentation controls for the current scene. */
 .expanded-player { grid-template-rows:auto minmax(180px,1fr) auto auto; }
 .expanded-player-header { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); }
-#collapsePlayer { justify-self:start; }
+
 #expandedAppearanceToggle { justify-self:end; }
 .expanded-player-body { display:grid; grid-template-columns:minmax(0,1fr); position:relative; min-width:0; min-height:0; gap:20px; }
 .expanded-player-body > .expanded-player-stage { min-width:0; min-height:0; }
@@ -239,7 +239,7 @@
 .expanded-player-sidebar .cd-controls > :first-child,
 .expanded-player-sidebar .cd-controls > :nth-child(4),
 .expanded-player-sidebar .cd-controls > label { grid-column:1 / -1; }
-.expanded-player-sidebar .cd-controls label { display:grid; gap:8px; margin:0; }
+.expanded-player-sidebar .cd-controls label { display:grid; gap:8px; margin:0; justify-content:stretch; }
 .expanded-player-sidebar .cd-controls button { min-width:0; white-space:normal; overflow-wrap:anywhere; }
 .expanded-player-body .effects-canvas { max-height:100%; }
 .expanded-player-body .cd-view { height:100%; max-height:100%; min-height:0; grid-template-rows:minmax(120px,1fr) auto auto auto; }
@@ -252,8 +252,83 @@
 }
 @media(max-width:640px) {
   .expanded-player-header { grid-template-columns:minmax(0,1fr) auto; gap:10px; }
-  .expanded-player-tabs { grid-column:1 / -1; grid-row:2; }
-  .expanded-player-header > #collapsePlayer { margin:0; }
+  .expanded-player-tabs { grid-column:1; grid-row:1; }
+
   .expanded-player-header > #expandedAppearanceToggle { grid-column:2; grid-row:1; }
   .expanded-player-sidebar { width:min(340px,100%); padding:14px; }
 }
+
+/* Compact header and one expand/collapse position in the transport. */
+.expanded-player-header { column-gap:10px; }
+.expanded-player-header > .expanded-player-tabs { grid-column:2; grid-row:1; }
+.expanded-player-header > #expandedAppearanceToggle { grid-column:3; grid-row:1; min-width:42px; min-height:42px; padding:6px; font-size:calc(24px * var(--icon-scale)); }
+.expanded-player #collapsePlayer { display:inline-flex; }
+.expanded-player .player-tools { grid-column:3; grid-row:1; }
+@media(max-width:760px) {
+  .expanded-player .player { grid-template-columns:auto minmax(0,1fr); }
+  .expanded-player .player > .transport { grid-column:1 / -1; grid-row:1; }
+  .expanded-player .player > .now-playing { grid-column:1; grid-row:2; }
+  .expanded-player .player > .player-tools { grid-column:2; grid-row:2; }
+  .expanded-player .player-tools .volume input { width:clamp(44px,19vw,100px); }
+}
+@media(max-width:640px) {
+  .expanded-player-header { grid-template-columns:minmax(0,1fr) auto; }
+  .expanded-player-header > .expanded-player-tabs { grid-column:1; grid-row:1; }
+  .expanded-player-tabs button { padding:8px 4px; }
+  .expanded-player-header > #expandedAppearanceToggle { grid-column:2; }
+}
+
+/* Effect surfaces use the whole stage; render buffers follow its actual aspect. */
+.expanded-player-stage.effects-stage { padding:0; }
+.expanded-player-body .effects-view { position:relative; display:block; width:100%; height:100%; max-width:none; min-height:0; }
+.expanded-player-body .effects-canvas { width:100%; height:100%; max-height:none; object-fit:fill; border-radius:inherit; }
+.effects-view > .effects-controls { display:none; }
+.effects-view > .effects-status { position:absolute; z-index:1; bottom:12px; left:50%; transform:translateX(-50%); width:max-content; max-width:calc(100% - 24px); background:color-mix(in srgb,var(--surface) 88%,transparent); }
+.effects-view > button { position:absolute; z-index:2; top:45%; left:50%; transform:translate(-50%,-50%); }
+.player-custom-colors { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; grid-column:1 / -1; }
+.player-custom-colors[hidden] { display:none; }
+.player-custom-colors > label { grid-template-rows:minmax(3em,auto) auto; align-content:start; overflow-wrap:anywhere; }
+.player-custom-colors input[type=color] { width:100%; min-width:0; height:42px; padding:4px; cursor:pointer; }
+.expanded-player[data-background=ambient] .expanded-player-stage::before,
+.expanded-player[data-background=waves] .expanded-player-stage::before,
+.expanded-player[data-background=texture] .expanded-player-stage::before { opacity:calc(var(--player-background-opacity) * .3); }
+.expanded-player:not([data-background=ambient]) .album-artwork-backdrop,
+.expanded-player:not([data-palette=theme]) .album-artwork-backdrop { display:none; }
+.expanded-player[data-background-visible=true][data-background=aurora] .expanded-player-stage::before {
+ display:block; inset:-30%; filter:blur(28px);
+ background:radial-gradient(ellipse at 25% 30%,var(--player-color-primary),transparent 55%),radial-gradient(ellipse at 75% 65%,var(--player-color-secondary),transparent 55%);
+ transform:rotate(-18deg) scale(1.2,.65);
+}
+.expanded-player[data-background-visible=true][data-background=gradient] .expanded-player-stage::before {
+ display:block; background:linear-gradient(130deg,var(--player-color-primary),transparent 50%,var(--player-color-secondary)); background-size:160% 160%;
+}
+.expanded-player[data-background-visible=true][data-background=stars] .expanded-player-stage { background:#0b1020; }
+.expanded-player[data-background-visible=true][data-background=stars] .expanded-player-stage::before {
+ display:block; inset:-10%;
+ background-image:radial-gradient(circle,#fff 1px,transparent 1.6px),radial-gradient(circle,var(--player-color-primary) 1.5px,transparent 2px),radial-gradient(circle,var(--player-color-secondary) 1px,transparent 2px),radial-gradient(ellipse at 30% 70%,var(--player-color-secondary),transparent 60%);
+ background-size:83px 97px,151px 127px,191px 173px,100% 100%; background-position:0 0,37px 61px,71px 17px,0 0;
+}
+.expanded-player[data-background-visible=true][data-background=grid] .expanded-player-stage::before {
+ display:block; inset:-45%; transform:perspective(500px) rotateX(55deg); transform-origin:center 65%;
+ background-image:linear-gradient(var(--player-color-primary) 1px,transparent 1px),linear-gradient(90deg,var(--player-color-secondary) 1px,transparent 1px); background-size:54px 54px;
+ mask-image:radial-gradient(ellipse,#000 15%,transparent 65%);
+}
+.expanded-player[data-background-visible=true][data-background=northern-lights] .expanded-player-stage { background:#07131f; }
+.expanded-player[data-background-visible=true][data-background=northern-lights] .expanded-player-stage::before {
+ display:block; inset:-20%; filter:blur(6px); transform:skewY(-12deg);
+ background:radial-gradient(ellipse at 70% 65%,var(--player-color-secondary),transparent 55%),repeating-linear-gradient(100deg,transparent 0 2%,color-mix(in srgb,var(--player-color-primary) 65%,#c5ffe6) 3.5%,transparent 6%),linear-gradient(0deg,transparent 20%,var(--player-color-primary) 48%,transparent 80%);
+ mask-image:radial-gradient(ellipse 70% 32% at 50% 45%,#000 15%,transparent 85%);
+}
+.expanded-player[data-background-motion=on][data-background=aurora] .expanded-player-stage::before { animation:player-aurora calc(18s * var(--player-background-duration-scale,1)) ease-in-out infinite alternate; will-change:transform; }
+.expanded-player[data-background-motion=on][data-background=gradient] .expanded-player-stage::before { animation:player-gradient calc(16s * var(--player-background-duration-scale,1)) ease-in-out infinite alternate; }
+.expanded-player[data-background-motion=on][data-background=stars] .expanded-player-stage::before { animation:player-stars calc(28s * var(--player-background-duration-scale,1)) linear infinite alternate; will-change:transform; }
+.expanded-player[data-background-motion=on][data-background=grid] .expanded-player-stage::before { animation:player-grid calc(12s * var(--player-background-duration-scale,1)) linear infinite; }
+.expanded-player[data-background-motion=on][data-background=northern-lights] .expanded-player-stage::before { animation:player-northern-lights calc(14s * var(--player-background-duration-scale,1)) ease-in-out infinite alternate; will-change:transform; }
+.expanded-player-tabs button { background:transparent; }
+.expanded-player-tabs [aria-selected=true] { background:var(--surface); }
+.expanded-player[data-background-motion=off] .expanded-player-stage::before { animation:none; will-change:auto; }
+@keyframes player-aurora { from {transform:translate(-8%,-4%) rotate(-18deg) scale(1.2,.65);} to {transform:translate(8%,4%) rotate(12deg) scale(.9,1.2);} }
+@keyframes player-gradient { from {background-position:0% 0%;} to {background-position:100% 100%;} }
+@keyframes player-stars { from {transform:translate(0,0);} to {transform:translate(-4%,5%);} }
+@keyframes player-grid { from {background-position:0 0;} to {background-position:0 54px;} }
+@keyframes player-northern-lights { from {transform:translate(-5%,2%) skewY(-12deg) scaleY(.8);} to {transform:translate(5%,-2%) skewY(5deg) scaleY(1.25);} }

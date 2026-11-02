@@ -11,12 +11,13 @@ $('fontSizeSetting').onchange = event => applyInterfaceSize('font',event.target.
 $('iconSizeSetting').onchange = event => applyInterfaceSize('icon',event.target.value);
 
 function applyTheme(value) {
-  const theme = ['forest', 'midnight', 'sand'].includes(value) ? value : 'forest';
+  const theme = MusicThemes.find(value) ? value : 'forest';
   document.documentElement.dataset.theme = theme;
-  document.documentElement.style.colorScheme = theme === 'midnight' ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = MusicThemes.find(theme).dark ? 'dark' : 'light';
   $('themeSelect').value = theme;
   store('theme', theme);
   globalThis.expandedPlayer?.refresh();
+  globalThis.expandedPlayer?.applyPalette();
 }
 applyTheme(stored('theme', 'forest'));
 $('themeSelect').onchange = e => applyTheme(e.target.value);
@@ -24,7 +25,11 @@ $('themeSelect').onchange = e => applyTheme(e.target.value);
 for (const prefix of ['player','expanded']) {
   $(prefix + 'BackgroundSetting').onchange = event => playerAppearance.set({background:event.target.value});
   $(prefix + 'IntensitySetting').oninput = event => playerAppearance.set({intensity:Number(event.target.value)});
+  $(prefix + 'BackgroundSpeedSetting').oninput = event => playerAppearance.set({backgroundSpeed:Number(event.target.value)});
   $(prefix + 'AnimationSetting').onchange = event => playerAppearance.set({animation:event.target.checked});
+  $(prefix + 'PaletteSetting').onchange = event => playerAppearance.set({palette:event.target.value});
+  $(prefix + 'PrimaryColor').oninput = event => playerAppearance.set({primary:event.target.value,palette:'custom'});
+  $(prefix + 'SecondaryColor').oninput = event => playerAppearance.set({secondary:event.target.value,palette:'custom'});
 }
 playerAppearance.subscribe(value => {
   for (const prefix of ['player','expanded']) {
@@ -33,7 +38,15 @@ playerAppearance.subscribe(value => {
     $(prefix + 'IntensitySetting').disabled = value.background === 'none';
     $(prefix + 'IntensitySetting').setAttribute('aria-valuetext',value.intensity + '%');
     $(prefix + 'IntensityValue').textContent = value.intensity + '%';
+    $(prefix + 'BackgroundSpeedSetting').value = value.backgroundSpeed;
+    $(prefix + 'BackgroundSpeedSetting').disabled = !['waves','aurora','gradient','stars','grid','northern-lights'].includes(value.background);
+    $(prefix + 'BackgroundSpeedSetting').setAttribute('aria-valuetext',value.backgroundSpeed + '%');
+    $(prefix + 'BackgroundSpeedValue').textContent = value.backgroundSpeed + '%';
     $(prefix + 'AnimationSetting').checked = value.animation;
+    $(prefix + 'PaletteSetting').value = value.palette;
+    $(prefix + 'PrimaryColor').value = value.primary;
+    $(prefix + 'SecondaryColor').value = value.secondary;
+    $(prefix + 'CustomColors').hidden = value.palette !== 'custom';
     $(prefix + 'ReducedMotionNote').hidden = !value.reducedMotion;
   }
 });

@@ -17,8 +17,8 @@ export function createCDScene(canvas, context, options = {}) {
   const material = value => { materials.add(value); return value; };
   function mesh(parent, shape, surface, name, x=0, y=0, z=0) {
     const value = new THREE.Mesh(geometry(shape),surface); value.name = name; value.position.set(x,y,z);
-    // Transmissive plastic must not cast an opaque shadow over the artwork.
-    value.castShadow = !(surface.transmission > 0); parent.add(value); return value;
+    // Clear plastic must not cast an opaque shadow over the artwork.
+    value.castShadow = !(surface.transmission > 0 || surface.transparent); parent.add(value); return value;
   }
   function box(parent, size, surface, name, x=0,y=0,z=0) {
     return mesh(parent,new THREE.BoxGeometry(...size),surface,name,x,y,z);
@@ -141,7 +141,10 @@ export function createCDScene(canvas, context, options = {}) {
     renderer.transmissionResolutionScale = .5;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
     renderer.debug.onShaderError = () => { throw Error('CD shader compilation failed'); };
-    glass = material(new THREE.MeshPhysicalMaterial({color:0xffffff,roughness:.09,metalness:0,transmission:.95,thickness:.035,ior:1.49,envMapIntensity:1.1}));
+    // Blend a thin clear sheet directly over the print. Transmission samples an
+    // intermediate render target and softens artwork even at zero roughness.
+    // The reflective material and separate refracting edges keep the plastic visible.
+    glass = material(new THREE.MeshPhysicalMaterial({color:0xffffff,transparent:true,opacity:.08,roughness:0,metalness:0,transmission:0,thickness:0,ior:1.49,clearcoat:.3,clearcoatRoughness:0,depthWrite:false,envMapIntensity:1.1}));
     edgeGlass = material(new THREE.MeshPhysicalMaterial({color:0xd9e5ef,roughness:.2,metalness:0,transmission:.65,thickness:.1,ior:1.49,envMapIntensity:1.2}));
     outline = material(new THREE.LineBasicMaterial({color:0xd5ebff,transparent:true,opacity:.4,depthWrite:false,toneMapped:false}));
     liner = material(new THREE.MeshStandardMaterial({color:0xc5ced8,roughness:.8,metalness:.03}));

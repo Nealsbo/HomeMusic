@@ -1,11 +1,11 @@
 const {CDPlayerView} = require('../web/cd-view.js');
 
-function cdFixture({quality,weak = false,supported = true,deferred = false,slow = 0,playing = false,ResizeObserver} = {}) {
+function cdFixture({quality,frameRate=30,rotationSpeed,weak = false,supported = true,deferred = false,slow = 0,playing = false,ResizeObserver} = {}) {
   const tasks = new Map(), documentEvents = new Map(), windowEvents = new Map(), storage = new Map(), created = [], models = [], fallbacks = [];
   const counts = {contexts:0,imports:0,models:0,disposed:0,lost:0};
   let now = 0, next = 0, resolveModule, rejectModule;
   let palette = {surface:'#ffffff',accent:'#24754b'};
-  if (quality) storage.set('expandedPlayerCD',JSON.stringify({quality}));
+  if (quality || frameRate !== 30 || rotationSpeed !== undefined) storage.set('expandedPlayerCD',JSON.stringify({quality,frameRate,rotationSpeed}));
   class Element {
     constructor(tag) {
       this.tagName = tag; this.nodes = []; this.parentNode = null; this.attributes = {}; this.style = {}; this.textContent = ''; this.listeners = new Map();
@@ -24,7 +24,7 @@ function cdFixture({quality,weak = false,supported = true,deferred = false,slow 
   }
   const document = {hidden:false,createElement(tag) { const element = new Element(tag); created.push(element); return element; },
     addEventListener:(type,fn) => documentEvents.set(type,fn),removeEventListener:(type,fn) => { if (documentEvents.get(type) === fn) documentEvents.delete(type); }};
-  const window = {addEventListener:(type,fn) => windowEvents.set(type,fn),removeEventListener:(type,fn) => { if (windowEvents.get(type) === fn) windowEvents.delete(type); }};
+  const window = {innerWidth:1000,innerHeight:500,addEventListener:(type,fn) => windowEvents.set(type,fn),removeEventListener:(type,fn) => { if (windowEvents.get(type) === fn) windowEvents.delete(type); }};
   const module = {createCDScene(canvas,gl,options) {
     counts.models++;
     let disposed = false;

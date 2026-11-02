@@ -1,0 +1,22 @@
+/* Adapted from Nord. See THEMES.md for sources. */
+:root[data-theme="nord"] {
+  --bg: #2e3440;
+  --ink: #eceff4;
+  --muted: #b8c3d4;
+  --soft-ink: #d8dee9;
+  --green: #88c0d0;
+  --line: #596578;
+  --side: #242a35;
+  --surface: #3b4252;
+  --soft: #434c5e;
+  --hover: #465267;
+  --selected: #4c566a;
+  --side-ink: #eceff4;
+  --side-muted: #b8c3d4;
+  --side-active: #4c566a;
+  --badge: #a3be8c;
+  --on-badge: #253326;
+  --on-accent: #24313a;
+  --danger: #ef8f99;
+}
+:root[data-theme="nord"] .mini-cover { background: var(--soft); }

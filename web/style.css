@@ -566,7 +566,7 @@ footer span {
   display:flex;
   align-items:center;
   gap:12px;
-  font-size:calc(9px * var(--font-scale));
+  font-size:calc(18px * var(--font-scale));
   color:var(--muted);
   margin-top:7px
 }
@@ -1301,3 +1301,24 @@ dialog { max-height: calc(100vh - 32px); overflow: auto; }
 .operation-heading > span { color: var(--muted); font-size: calc(11px * var(--font-scale)); }
 .operation-item ul { padding-left: 20px; }
 .operation-error { color: var(--danger); }
+
+/* Presentation toggles stay beside volume in the shared transport. */
+.player-tools { display:flex; align-items:center; justify-self:end; gap:10px; min-width:0; }
+.player-tools > .icon { flex-shrink:0; }
+#collapsePlayer { display:none; }
+.progress > span { white-space:nowrap; flex-shrink:0; font-variant-numeric:tabular-nums; }
+@media (min-width:761px) and (max-width:1150px) {
+  .player { grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto; gap:12px; }
+  .player-tools .volume { display:flex; }
+  .player-tools .volume input { width:64px; }
+  .player-tools .volume-icon,.player-tools #volumeValue { display:none; }
+}
+@media (max-width:760px) {
+  .player { grid-template-columns:minmax(0,1fr) auto; column-gap:8px; }
+  .player > .now-playing { grid-column:1; grid-row:1; gap:6px; }
+  .player > .transport { grid-column:1 / -1; grid-row:2; }
+  .player > .player-tools { grid-column:2; grid-row:1; gap:6px; }
+  .player-tools .volume { display:flex; gap:0; }
+  .player-tools .volume input { width:clamp(36px,10vw,60px); }
+  .player-tools .volume-icon,.player-tools #volumeValue { display:none; }
+}

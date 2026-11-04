@@ -13,7 +13,7 @@ class Element {
     this.classList = {toggle(name,force) { const add = force ?? !classes.has(name); add ? classes.add(name) : classes.delete(name); return add; },
       add:name => classes.add(name),remove:name => classes.delete(name),contains:name => classes.has(name)};
     this.nodes = []; this.parentNode = null;
-    this.style = {setProperty(key,value) { this[key] = value; }};
+    this.style = {setProperty(key,value) { this[key] = value; },getPropertyValue(key) { return this[key] || ''; }};
   }
   set innerHTML(html) {
     this.html = html;
@@ -37,6 +37,7 @@ class Element {
   remove() { if (this.parentNode) this.parentNode.nodes = this.parentNode.nodes.filter(node => node !== this); this.parentNode = null; }
   focus() { if (this.ownerDocument) this.ownerDocument.activeElement = this; }
   addEventListener(name,fn,options = {}) { (this.listeners[name] ||= []).push({fn,once:options.once}); }
+  removeEventListener(name,fn) { this.listeners[name] = (this.listeners[name] || []).filter(entry => entry.fn !== fn); }
   emit(name) { this['on' + name]?.(); const list = this.listeners[name] || []; this.listeners[name] = list.filter(e => !e.once); list.forEach(e => e.fn()); }
   removeAttribute(name) { if (name === 'src') this.src = undefined; }
   load() { this.loadCalls = (this.loadCalls || 0) + 1; if (this.id === 'audio') { this.currentTime = 0; this.paused = true; } }
@@ -1238,7 +1239,7 @@ test('appearance controls synchronize across both panels and preserve playback i
   const queue = c.run('JSON.stringify(queueModel.snapshot())'), listening = c.run('listeningSession');
   for (const theme of ['forest','midnight','sand']) {
     c.run(`applyTheme(${JSON.stringify(theme)})`);
-    for (const background of ['none','ambient','waves','texture']) {
+    for (const background of ['none','ambient','gradient','stars']) {
       c.get('expandedBackgroundSetting').onchange({target:{value:background}});
       c.get('expandedIntensitySetting').oninput({target:{value:'70'}});
       assert.equal(c.get('playerBackgroundSetting').value, background);
@@ -1258,7 +1259,7 @@ test('appearance controls synchronize across both panels and preserve playback i
   assert.equal(c.get('expandedPlayerDialog').open, false);
   assert.equal(c.get('expandedAppearancePanel').hidden, true);
   const restored = await client({initialStorage:Object.fromEntries(c.local)});
-  assert.equal(restored.get('playerBackgroundSetting').value, 'texture');
+  assert.equal(restored.get('playerBackgroundSetting').value, 'stars');
   assert.equal(restored.get('playerIntensitySetting').value, '70');
   assert.equal(restored.get('playerAnimationSetting').checked, false);
 });
@@ -1266,7 +1267,7 @@ test('appearance controls synchronize across both panels and preserve playback i
 test('decorative motion only runs for visible active playback and responds live to reduced motion', async () => {
   const c = await client();
   await c.run("playTrack('a',['a','b'])");
-  c.run("playerAppearance.set({background:'waves'}); expandedPlayer.open()");
+  c.run("playerAppearance.set({background:'gradient'}); expandedPlayer.open()");
   const dialog = c.get('expandedPlayerDialog');
   assert.equal(dialog.dataset.backgroundMotion, 'on');
   c.audio.pause(); assert.equal(dialog.dataset.backgroundMotion, 'off');
@@ -1295,7 +1296,7 @@ test('decorative motion only runs for visible active playback and responds live 
 
 test('appearance preferences remain local and independent of mode, theme and library wave', async () => {
   const first = await client();
-  first.run("applyTheme('midnight'); setWaveMode('eco'); expandedPlayer.setMode('cd'); playerAppearance.set({background:'texture',intensity:95,animation:false})");
+  first.run("applyTheme('midnight'); setWaveMode('eco'); expandedPlayer.setMode('cd'); playerAppearance.set({background:'ambient',intensity:95,animation:false})");
   await first.run("MusicI18n.setLanguage('ru')");
   assert.equal(first.run('expandedPlayer.mode'), 'cd');
   assert.equal(first.run('waveMode'), 'eco');
@@ -1305,7 +1306,7 @@ test('appearance preferences remain local and independent of mode, theme and lib
   assert.equal(second.run('playerAppearance.get().animation'), true);
   const restored = await client({initialStorage:Object.fromEntries(first.local)});
   assert.equal(restored.run('expandedPlayer.mode'), 'cd');
-  assert.equal(restored.run('playerAppearance.get().background'), 'texture');
+  assert.equal(restored.run('playerAppearance.get().background'), 'ambient');
   assert.equal(restored.run('playerAppearance.get().animation'), false);
   assert.equal(restored.run('waveMode'), 'eco');
 });
@@ -1484,14 +1485,14 @@ test('all eight themes and new background palettes preserve playback and synchro
   assert.equal(c.run('JSON.stringify(queueModel.snapshot())'),queue); assert.equal(c.run('listeningSession'),session);
 });
 
-test('background speed synchronizes panels, scales durations and stops only background motion at zero', async () => {
+test('background speed synchronizes panels and stops only background motion at zero', async () => {
   const c=await client(); await c.run("playTrack('a',['a','b']); playerAppearance.set({background:'northern-lights'}); expandedPlayer.open()");
   c.audio.currentTime=32;
   const source=c.audio.src, queue=c.run('JSON.stringify(queueModel.snapshot())'), session=c.run('listeningSession');
   assert.equal(c.get('playerBackgroundSpeedSetting').value,'20');
   c.get('expandedBackgroundSpeedSetting').oninput({target:{value:'100'}});
   assert.equal(c.get('playerBackgroundSpeedValue').textContent,'100%');
-  assert.equal(c.get('expandedPlayerDialog').style['--player-background-duration-scale'],'0.2');
+  assert.equal(c.run('playerAppearance.get().backgroundSpeed'),100);
   c.get('playerBackgroundSpeedSetting').oninput({target:{value:'0'}});
   assert.equal(c.get('expandedBackgroundSpeedSetting').value,'0');
   assert.equal(c.get('expandedPlayerDialog').dataset.backgroundMotion,'off');
@@ -1499,7 +1500,79 @@ test('background speed synchronizes panels, scales durations and stops only back
   assert.equal(c.run('playerAppearance.get().motionEnabled'),true);
   c.get('expandedBackgroundSpeedSetting').oninput({target:{value:'20'}});
   assert.equal(c.get('expandedPlayerDialog').dataset.backgroundMotion,'on');
-  assert.equal(c.get('expandedPlayerDialog').style['--player-background-duration-scale'],'1');
+  assert.equal(c.run('playerAppearance.get().backgroundSpeed'),20);
   assert.equal(c.audio.src,source); assert.equal(c.audio.currentTime,32); assert.equal(c.audio.paused,false);
   assert.equal(c.run('JSON.stringify(queueModel.snapshot())'),queue); assert.equal(c.run('listeningSession'),session);
+});
+
+test('aurora shell suspends on hidden tabs and closing and releases the surface when deselected',async () => {
+  const c = await client();
+  c.run(`globalThis.auroraUpdates=[]; globalThis.auroraDisposals=0;
+    globalThis.PlayerBackground=class {
+      update(value) { auroraUpdates.push(value); }
+      dispose() { auroraDisposals++; }
+    };`);
+  await c.run("playTrack('a',['a','b']); playerAppearance.set({background:'northern-lights'}); expandedPlayer.open()");
+  assert.equal(c.run('auroraUpdates.at(-1).moving'),true);
+  c.run("document.hidden=true; document.dispatchEvent(new Event('visibilitychange'))");
+  assert.equal(c.run('auroraUpdates.at(-1).visible'),false);
+  assert.equal(c.run('auroraUpdates.at(-1).moving'),false);
+  c.run("document.hidden=false; document.dispatchEvent(new Event('visibilitychange'))");
+  assert.equal(c.run('auroraUpdates.at(-1).moving'),true);
+  c.run("playerAppearance.set({palette:'custom',primary:'#123456',secondary:'#abcdef'})");
+  assert.equal(c.run('auroraUpdates.at(-1).primary'),'#123456');
+  c.run('expandedPlayer.close(true)');
+  assert.equal(c.run('auroraUpdates.at(-1).moving'),false);
+  assert.equal(c.run('auroraDisposals'),1);
+  c.run("expandedPlayer.open(); playerAppearance.set({background:'ambient'})");
+  assert.equal(c.run('auroraDisposals'),2);
+});
+
+test('background without music synchronizes checkboxes and respects visibility, motion and speed',async () => {
+  const c = await client();
+  c.run("playerAppearance.set({background:'northern-lights'}); expandedPlayer.open()");
+  const motion = () => c.get('expandedPlayerDialog').dataset.backgroundMotion;
+  assert.equal(motion(),'off');
+  assert.equal(c.get('expandedBackgroundIdleSetting').checked,false);
+  c.get('expandedBackgroundIdleSetting').onchange({target:{checked:true}});
+  assert.equal(motion(),'on'); assert.equal(c.audio.paused,true);
+  assert.equal(c.get('playerBackgroundIdleSetting').checked,true);
+  assert.equal(JSON.parse(c.local.get('expandedPlayerAppearance')).animateWhenPaused,true);
+  c.run("document.hidden=true; document.dispatchEvent(new Event('visibilitychange'))");
+  assert.equal(motion(),'off');
+  c.run("document.hidden=false; document.dispatchEvent(new Event('visibilitychange'))");
+  assert.equal(motion(),'on');
+  c.setReducedMotion(true); assert.equal(motion(),'off');
+  c.setReducedMotion(false); assert.equal(motion(),'on');
+  c.run('playerAppearance.set({backgroundSpeed:0})'); assert.equal(motion(),'off');
+  c.run('playerAppearance.set({backgroundSpeed:20,animation:false})'); assert.equal(motion(),'off');
+  c.run('playerAppearance.set({animation:true})'); assert.equal(motion(),'on');
+  c.get('playerBackgroundIdleSetting').onchange({target:{checked:false}});
+  assert.equal(c.get('expandedBackgroundIdleSetting').checked,false); assert.equal(motion(),'off');
+  await c.run("playTrack('a',['a','b'])"); assert.equal(motion(),'on');
+  c.audio.pause(); assert.equal(motion(),'off');
+  const source=c.audio.src, queue=c.run('JSON.stringify(queueModel.snapshot())');
+  c.get('expandedBackgroundIdleSetting').onchange({target:{checked:true}}); assert.equal(motion(),'on');
+  assert.equal(c.audio.paused,true); assert.equal(c.audio.src,source);
+  assert.equal(c.run('JSON.stringify(queueModel.snapshot())'),queue);
+  c.run('expandedPlayer.close(true)'); assert.equal(motion(),'off');
+});
+
+test('simple light ribbons use the shared shader surface and reuse it across mode changes',async () => {
+  const c = await client();
+  c.run(`globalThis.shaderCreations=0; globalThis.PlayerBackground=class {
+    constructor() { shaderCreations++; } update() {} dispose() {}
+  };
+  playerAppearance.set({background:'aurora',animateWhenPaused:true}); expandedPlayer.open();`);
+  assert.equal(c.run('shaderCreations'),1);
+  assert.equal(c.get('expandedBackgroundSetting').value,'aurora');
+  assert.equal(c.get('expandedBackgroundSpeedSetting').disabled,false);
+  assert.equal(c.get('expandedPlayerDialog').dataset.backgroundMotion,'on');
+  c.run('playerAppearance.set({backgroundSpeed:0})');
+  assert.equal(c.get('expandedPlayerDialog').dataset.backgroundMotion,'off');
+  c.run("playerAppearance.set({background:'grid',backgroundSpeed:20})");
+  assert.equal(c.run('shaderCreations'),1);
+  c.run("playerAppearance.set({background:'aurora'})");
+  assert.equal(c.run('shaderCreations'),1);
+  assert.equal(c.get('expandedPlayerDialog').dataset.backgroundMotion,'on');
 });

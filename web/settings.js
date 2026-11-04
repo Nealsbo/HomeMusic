@@ -27,6 +27,7 @@ for (const prefix of ['player','expanded']) {
   $(prefix + 'IntensitySetting').oninput = event => playerAppearance.set({intensity:Number(event.target.value)});
   $(prefix + 'BackgroundSpeedSetting').oninput = event => playerAppearance.set({backgroundSpeed:Number(event.target.value)});
   $(prefix + 'AnimationSetting').onchange = event => playerAppearance.set({animation:event.target.checked});
+  $(prefix + 'BackgroundIdleSetting').onchange = event => playerAppearance.set({animateWhenPaused:event.target.checked});
   $(prefix + 'PaletteSetting').onchange = event => playerAppearance.set({palette:event.target.value});
   $(prefix + 'PrimaryColor').oninput = event => playerAppearance.set({primary:event.target.value,palette:'custom'});
   $(prefix + 'SecondaryColor').oninput = event => playerAppearance.set({secondary:event.target.value,palette:'custom'});
@@ -39,10 +40,11 @@ playerAppearance.subscribe(value => {
     $(prefix + 'IntensitySetting').setAttribute('aria-valuetext',value.intensity + '%');
     $(prefix + 'IntensityValue').textContent = value.intensity + '%';
     $(prefix + 'BackgroundSpeedSetting').value = value.backgroundSpeed;
-    $(prefix + 'BackgroundSpeedSetting').disabled = !['waves','aurora','gradient','stars','grid','northern-lights'].includes(value.background);
+    $(prefix + 'BackgroundSpeedSetting').disabled = !['aurora','gradient','stars','grid','northern-lights'].includes(value.background);
     $(prefix + 'BackgroundSpeedSetting').setAttribute('aria-valuetext',value.backgroundSpeed + '%');
     $(prefix + 'BackgroundSpeedValue').textContent = value.backgroundSpeed + '%';
     $(prefix + 'AnimationSetting').checked = value.animation;
+    $(prefix + 'BackgroundIdleSetting').checked = value.animateWhenPaused;
     $(prefix + 'PaletteSetting').value = value.palette;
     $(prefix + 'PrimaryColor').value = value.primary;
     $(prefix + 'SecondaryColor').value = value.secondary;

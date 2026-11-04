@@ -67,7 +67,7 @@ class MusicServerTests(unittest.TestCase):
                            ('/vendor/three-r180/three.core.min.js','text/javascript'),
                            ('/vendor/three-r180/manifest.json','application/json'),
                            ('/audio-analysis.js','text/javascript'), ('/effects-view.js','text/javascript'), ('/player-appearance.js','text/javascript'), ('/album-view.js','text/javascript'), ('/player-bridge.js','text/javascript'), ('/player-views.js','text/javascript'),
-                           ('/expanded-player.js','text/javascript'), ('/expanded-player.css','text/css')]:
+                           ('/shader-background.js','text/javascript'), ('/expanded-player.js','text/javascript'), ('/expanded-player.css','text/css')]:
             status, headers, body = self.request('GET', path)
             self.assertEqual(status, 200)
             self.assertEqual(headers['Content-Type'], mime + '; charset=utf-8')

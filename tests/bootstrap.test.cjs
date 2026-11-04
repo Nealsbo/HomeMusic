@@ -23,7 +23,7 @@ async function boot(optional, failedAsset = '/album-view.js') {
 }
 
 test('unavailable optional visual scripts do not prevent the application from starting', async () => {
-  for (const path of ['/album-view.js','/visualization-presets.js','/effects-view.js','/cd-view.js']) {
+  for (const path of ['/album-view.js','/visualization-presets.js','/effects-view.js','/cd-view.js','/shader-background.js']) {
     const result = await boot(true,path);
     assert.deepEqual(result.loaded, ['/core.js','/app.js']);
     assert.equal(result.warnings.length, 1);
